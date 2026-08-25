@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/agent/index.md", "reason": "参赛 Agent 的入口、会话生命周期与开发前检查。"}
+{"file": ".trellis/spec/agent/contract-and-state.md", "reason": "reset/respond、ask_attribute 枚举、会话隔离和推荐输出合同。"}
+{"file": ".trellis/spec/evaluator/protocol-and-scoring.md", "reason": "评估循环、recommendation 过滤、场景和评分公式。"}
+{"file": ".trellis/spec/data-contracts/jsonl-privacy-submission.md", "reason": "JSONL、parent_asin、隐私、密钥和提交边界。"}
+{"file": ".trellis/spec/testing/unittest-fixtures.md", "reason": "标准库 unittest、TemporaryDirectory 与最小确定性 fixture。"}
+{"file": ".trellis/spec/guides/offline-reproducibility.md", "reason": "标准库优先、catalog 准备、网络限制和离线复现。"}

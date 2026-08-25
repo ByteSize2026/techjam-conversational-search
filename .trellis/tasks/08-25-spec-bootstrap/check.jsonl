@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/agent/index.md", "reason": "核查 Agent 规范入口的链接、来源、检查项和交叉引用。"}
+{"file": ".trellis/spec/evaluator/index.md", "reason": "核查评估器协议、过滤、四种场景和评分规则。"}
+{"file": ".trellis/spec/data-contracts/index.md", "reason": "核查 JSONL、隐私和提交边界。"}
+{"file": ".trellis/spec/testing/index.md", "reason": "核查 unittest 与 fixture 约定。"}
+{"file": ".trellis/spec/guides/index.md", "reason": "核查横切影响和离线复现的规范入口。"}
+{"file": ".trellis/spec/guides/change-impact.md", "reason": "核查跨层影响链和场景回归检查。"}
