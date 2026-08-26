@@ -818,11 +818,17 @@ def _metrics_for_result(
     *,
     manifest: Mapping[str, object] | None,
     split: str,
+    sample_limit: int | None = None,
 ) -> tuple[dict[str, object], dict[str, dict[str, object]], set[str] | None]:
     sessions = _session_list(data)
     expected_ids: set[str] | None = None
     if manifest is not None:
-        expected_ids = set(manifest_sample_ids(manifest, split))
+        if sample_limit is not None and sample_limit < 0:
+            raise ValueError("sample_limit must be non-negative")
+        manifest_ids = manifest_sample_ids(manifest, split)
+        if sample_limit is not None:
+            manifest_ids = manifest_ids[:sample_limit]
+        expected_ids = set(manifest_ids)
     if sessions is not None:
         available_ids = {
             _clean_text(session.get("sample_id"))
@@ -897,6 +903,7 @@ def compare_result_data(
     candidate_label: str = "reranked",
     manifest: Mapping[str, object] | None = None,
     split: str = "all",
+    sample_limit: int | None = None,
     max_hit_rate_regression: float = 0.01,
     max_mttc_regression: float = 0.50,
     asset_size_bytes: int | None = None,
@@ -910,11 +917,13 @@ def compare_result_data(
         baseline,
         manifest=manifest,
         split=split,
+        sample_limit=sample_limit,
     )
     candidate_metrics, candidate_scenarios, candidate_ids = _metrics_for_result(
         candidate,
         manifest=manifest,
         split=split,
+        sample_limit=sample_limit,
     )
     baseline_count = baseline_metrics.get("sample_count")
     candidate_count = candidate_metrics.get("sample_count")
@@ -987,6 +996,7 @@ def compare_result_data(
     return {
         "schema_version": "qwen3-reranker-comparison-v1",
         "split": split,
+        "sample_limit": sample_limit,
         "baseline": {
             "label": baseline_label,
             "metrics": baseline_metrics,
@@ -1012,6 +1022,7 @@ def compare_result_files(
     output_path: str | Path | None = None,
     manifest_path: str | Path | None = None,
     split: str = "all",
+    sample_limit: int | None = None,
     asset_dir: str | Path | None = None,
     max_hit_rate_regression: float = 0.01,
     max_mttc_regression: float = 0.50,
@@ -1044,6 +1055,7 @@ def compare_result_files(
             candidate_label=candidate_file.stem,
             manifest=manifest,
             split=split,
+            sample_limit=sample_limit,
             max_hit_rate_regression=max_hit_rate_regression,
             max_mttc_regression=max_mttc_regression,
             asset_size_bytes=asset_bytes,
@@ -1642,6 +1654,7 @@ def _parser() -> argparse.ArgumentParser:
     compare.add_argument("--artifact-root", help="explicit artifact root when --output is omitted")
     compare.add_argument("--manifest", help="optional frozen manifest JSON")
     compare.add_argument("--split", choices=("all", *SPLIT_NAMES), default="all")
+    compare.add_argument("--sample-limit", type=int, help="optional deterministic subset size for smoke comparisons")
     compare.add_argument("--asset-dir", help="optional existing model/runtime asset directory")
     compare.add_argument("--max-hit-rate-regression", type=float, default=0.01)
     compare.add_argument("--max-mttc-regression", type=float, default=0.50)
@@ -1735,6 +1748,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         output_path=output,
         manifest_path=args.manifest,
         split=args.split,
+        sample_limit=args.sample_limit,
         asset_dir=args.asset_dir,
         max_hit_rate_regression=args.max_hit_rate_regression,
         max_mttc_regression=args.max_mttc_regression,

@@ -34,3 +34,53 @@
 ## 修改边界
 
 只要变更涉及 `MAX_TURNS`、`TOP_K`、`ALLOWED_ATTRIBUTES`、`normalize_recommendations`、`customer_reply`、`metric_summary` 或 `evaluate`，就同时核查 API 合同、配置、测试和竞赛规则。普通 Agent 改动不应改变这些符号；影响分析见 [跨层影响](../guides/change-impact.md)。
+
+## Scenario: manifest 子集结果比较
+
+### 1. Scope / Trigger
+
+使用 `scripts/benchmark_qwen_reranker.py compare` 比较由 `--sample-limit` 产生的 smoke 子集时，comparison 必须使用同一个 limit；否则它会按完整 manifest split 校验并错误报告缺失样本。
+
+### 2. Signatures
+
+```text
+compare --baseline <json> --reranked <json> \
+  --manifest <json> --split <name> [--sample-limit <N>]
+```
+
+Python 接口 `compare_result_data(...)`、`compare_result_files(...)` 和内部 `_metrics_for_result(...)` 均接受 `sample_limit: int | None`。
+
+### 3. Contracts
+
+- `sample_limit=None`：要求结果覆盖所选 split 的全部 ID。
+- `sample_limit=N`：按 manifest 中的稳定顺序只校验前 N 个 ID，并只聚合这些 session。
+- baseline、reranked 和 compare 必须使用相同的 manifest、split 与 sample limit。
+- comparison JSON 必须回写 `sample_limit`，便于审计结果范围。
+
+### 4. Validation & Error Matrix
+
+- `sample_limit < 0` → `ValueError("sample_limit must be non-negative")`。
+- 结果缺少所选范围内的 ID → `ValueError("result is missing ... IDs")`。
+- 命名 split 没有 session 明细 → 拒绝只从聚合指标推断。
+
+### 5. Good/Base/Bad Cases
+
+- Good：baseline、rerank、compare 都使用 validation + limit 5。
+- Base：三者都使用完整 validation，不传 limit。
+- Bad：baseline/rerank 使用 limit 5，而 compare 按完整 validation 40 校验。
+
+### 6. Tests Required
+
+- 断言 limit 1 只聚合 manifest 的首个 ID。
+- 断言省略 limit 时同一单样本结果因缺少其余 split ID 而失败。
+- 断言 CLI 能解析并传递 `--sample-limit`。
+
+### 7. Wrong vs Correct
+
+```bash
+# Wrong: smoke 结果对完整 split 做 comparison
+compare --manifest manifest.json --split validation
+
+# Correct: comparison 与两个输入使用同一子集
+compare --manifest manifest.json --split validation --sample-limit 5
+```

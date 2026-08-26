@@ -242,6 +242,69 @@ class RerankerBenchmarkTest(unittest.TestCase):
             written = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(len(written["comparisons"]), 2)
 
+    def test_compare_manifest_split_honors_smoke_sample_limit(self) -> None:
+        manifest = {
+            "splits": {
+                "dev": [],
+                "validation": [
+                    {"sample_id": "a"},
+                    {"sample_id": "b"},
+                ],
+                "locked": [],
+            },
+            "split_ids": {
+                "dev": [],
+                "validation": ["a", "b"],
+                "locked": [],
+            },
+        }
+        result = {
+            "sessions": [
+                {
+                    "sample_id": "a",
+                    "scenario_type": "buying",
+                    "hit": True,
+                    "best_rank": 1,
+                    "first_hit_turn": 1,
+                }
+            ]
+        }
+        report = compare_result_data(
+            result,
+            result,
+            manifest=manifest,
+            split="validation",
+            sample_limit=1,
+        )
+        self.assertEqual(report["sample_limit"], 1)
+        self.assertEqual(report["baseline"]["metrics"]["sample_count"], 1)
+        self.assertTrue(report["guardrails"]["passed"])
+
+        with self.assertRaisesRegex(ValueError, "missing 1 IDs"):
+            compare_result_data(
+                result,
+                result,
+                manifest=manifest,
+                split="validation",
+            )
+
+        args = _parser().parse_args(
+            [
+                "compare",
+                "--baseline",
+                "baseline.json",
+                "--reranked",
+                "candidate.json",
+                "--manifest",
+                "manifest.json",
+                "--split",
+                "validation",
+                "--sample-limit",
+                "1",
+            ]
+        )
+        self.assertEqual(args.sample_limit, 1)
+
     def test_resource_measurement_reports_latency_and_rss_fields(self) -> None:
         report = measure_callable(lambda: sum(range(10)), iterations=3)
         self.assertGreaterEqual(report["wall_time_ms"], 0)
