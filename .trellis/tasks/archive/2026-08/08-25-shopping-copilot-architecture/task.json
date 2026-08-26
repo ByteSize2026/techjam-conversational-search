@@ -3,7 +3,7 @@
   "name": "shopping-copilot-architecture",
   "title": "设计 Shopping Copilot 实现方案与架构",
   "description": "定义无通用 Agent 框架的 Shopping Copilot：动态 Buying/Browsing 双路检索、CandidateGate、Context Programming、LLM Semantic Ranking 与分阶段实施方案。",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": null,
   "scope": "agent implementation: explicit shopping pipeline and tiered model backend; evaluator/data unchanged",
   "package": null,
@@ -11,7 +11,7 @@
   "creator": "deequoique",
   "assignee": "deequoique",
   "createdAt": "2026-08-25",
-  "completedAt": null,
+  "completedAt": "2026-08-26",
   "branch": null,
   "base_branch": "main",
   "worktree_path": null,
@@ -22,5 +22,9 @@
   "parent": null,
   "relatedFiles": [],
   "notes": "",
-  "meta": {}
+  "meta": {
+    "final_commit": "be20b4c",
+    "public_technical_score": "0.710956",
+    "verification": "16 unittest passed; 200-session public evaluation completed"
+  }
 }
