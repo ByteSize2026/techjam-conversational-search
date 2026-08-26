@@ -1,0 +1,28 @@
+{
+  "id": "qwen3-reranker-benchmark",
+  "name": "qwen3-reranker-benchmark",
+  "title": "Benchmark Qwen3 Reranker for Shopping Agent",
+  "description": "Evaluate Qwen3-Reranker-0.6B on M1 16GB for Top-K shopping reranking, MRR/TechnicalScore gain, latency and memory, with all runtimes, model weights and caches stored on /Volumes/PeeB.",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "benchmark and optionally integrate Qwen3-Reranker-0.6B; external PeeB storage only; no dense retrieval or dialogue policy",
+  "package": null,
+  "priority": "P1",
+  "creator": "deequoique",
+  "assignee": "deequoique",
+  "createdAt": "2026-08-26",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "storage_root": "/Volumes/PeeB/ai-models/techjam"
+  }
+}

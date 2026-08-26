@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/agent/index.md", "reason": "Preserve the Agent contract, candidate validity, and semantic Top-30 boundary"}
+{"file": ".trellis/spec/guides/change-impact.md", "reason": "Retrieval and candidate-volume changes affect all evaluator scenarios and ranking metrics"}
+{"file": ".trellis/spec/guides/offline-reproducibility.md", "reason": "Keep the adaptive catalog path standard-library-only and reproducible"}
+{"file": ".trellis/spec/testing/index.md", "reason": "Use deterministic unittest fixtures for category resolution and quota behavior"}

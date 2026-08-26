@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/agent/contract-and-state.md", "reason": "Verify runtime receives no ground truth and output/session contracts remain unchanged"}
+{"file": ".trellis/spec/evaluator/protocol-and-scoring.md", "reason": "Verify Top-10 scoring and scenario metrics against the frozen evaluator"}
+{"file": ".trellis/spec/guides/change-impact.md", "reason": "Audit cross-scenario regression and ranking cutoff effects"}
+{"file": ".trellis/spec/testing/unittest-fixtures.md", "reason": "Verify deterministic, isolated catalog fixtures and edge coverage"}

@@ -13,6 +13,96 @@ from .catalog import ProductRecord
 from .state import ALLOWED_ATTRIBUTES, CandidateStats, RuntimeContext, SessionState
 
 
+CATEGORY_RECALL_SMALL_LIMIT = 500
+CATEGORY_RECALL_MIN_LIMIT = 100
+CATEGORY_RECALL_MAX_LIMIT = 400
+
+
+def category_recall_ratio(
+    active_hard_constraint_count: object = 0,
+    *,
+    browsing: float = 0.50,
+    one_hard: float = 0.35,
+    many_hard: float = 0.20,
+) -> float:
+    """Return the deterministic recall ratio for conversational specificity."""
+
+    def _ratio(value: object, fallback: float) -> float:
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            parsed = fallback
+        return min(max(parsed, 0.0), 1.0) if math.isfinite(parsed) else fallback
+
+    browsing_ratio = _ratio(browsing, 0.50)
+    one_hard_ratio = _ratio(one_hard, 0.35)
+    many_hard_ratio = _ratio(many_hard, 0.20)
+    try:
+        count = int(active_hard_constraint_count)
+    except (TypeError, ValueError):
+        count = 0
+    if count <= 0:
+        return browsing_ratio
+    if count == 1:
+        return one_hard_ratio
+    return many_hard_ratio
+
+
+def adaptive_category_budget(
+    category_size: object,
+    active_hard_constraint_count: object = 0,
+    *,
+    small_category_limit: int = CATEGORY_RECALL_SMALL_LIMIT,
+    minimum: int = CATEGORY_RECALL_MIN_LIMIT,
+    maximum: int = CATEGORY_RECALL_MAX_LIMIT,
+    browsing_ratio: float = 0.50,
+    one_hard_ratio: float = 0.35,
+    many_hard_ratio: float = 0.20,
+) -> int:
+    """Calculate a bounded category-route budget.
+
+    Small categories are cheap to scan completely.  Larger categories use a
+    specificity-aware proportion and a hard upper bound so an uncertain
+    anchor cannot trigger an unbounded catalog read.  Invalid or negative
+    sizes safely produce zero.
+    """
+
+    try:
+        size = max(int(category_size), 0)
+    except (TypeError, ValueError):
+        size = 0
+    if size <= 0:
+        return 0
+    try:
+        small_limit = max(int(small_category_limit), 0)
+    except (TypeError, ValueError):
+        small_limit = CATEGORY_RECALL_SMALL_LIMIT
+    try:
+        lower = max(int(minimum), 0)
+    except (TypeError, ValueError):
+        lower = CATEGORY_RECALL_MIN_LIMIT
+    try:
+        upper = max(int(maximum), lower)
+    except (TypeError, ValueError):
+        upper = max(CATEGORY_RECALL_MAX_LIMIT, lower)
+    if size <= small_limit:
+        return size
+    proportional = math.ceil(
+        size
+        * category_recall_ratio(
+            active_hard_constraint_count,
+            browsing=browsing_ratio,
+            one_hard=one_hard_ratio,
+            many_hard=many_hard_ratio,
+        )
+    )
+    return min(size, max(lower, min(proportional, upper)))
+
+
+# Readable alias for callers that use the noun-first naming convention.
+category_recall_budget = adaptive_category_budget
+
+
 @dataclass(frozen=True)
 class RouteDecision:
     mode: str
@@ -306,9 +396,15 @@ class ClarificationPolicy:
 
 
 __all__ = [
+    "CATEGORY_RECALL_MAX_LIMIT",
+    "CATEGORY_RECALL_MIN_LIMIT",
+    "CATEGORY_RECALL_SMALL_LIMIT",
     "CandidateGate",
     "CandidateGateDecision",
     "ClarificationPolicy",
     "IntentRouter",
     "RouteDecision",
+    "adaptive_category_budget",
+    "category_recall_budget",
+    "category_recall_ratio",
 ]

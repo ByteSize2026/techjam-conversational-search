@@ -9,6 +9,7 @@ tests.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 import json
@@ -262,6 +263,129 @@ class RetrievedProduct:
         return self.product.compressed()
 
 
+@dataclass(frozen=True)
+class CategoryResolution:
+    """A trustworthy category match for a bounded session anchor.
+
+    The resolver deliberately returns the product IDs only to the retrieval
+    layer.  Production diagnostics use the status and counts, never a hidden
+    target ID.  ``ambiguous`` and ``unknown`` resolutions carry no IDs so a
+    caller cannot accidentally turn an uncertain natural-language anchor into
+    an unbounded category scan.
+    """
+
+    anchor: str
+    status: str
+    category: str | None = None
+    normalized_category: str | None = None
+    matched_alias: str | None = None
+    path: tuple[str, ...] = ()
+    product_ids: tuple[str, ...] = ()
+    reason: str = "unknown_anchor"
+
+    @property
+    def resolved(self) -> bool:
+        return self.status in {"resolved", "resolved_union"} and bool(self.product_ids)
+
+    @property
+    def category_size(self) -> int:
+        return len(self.product_ids)
+
+    def as_dict(self) -> dict[str, object]:
+        """Return target-free metadata suitable for a diagnostics record."""
+
+        return {
+            "anchor": self.anchor,
+            "status": self.status,
+            "category": self.category,
+            "normalized_category": self.normalized_category,
+            "matched_alias": self.matched_alias,
+            "path": list(self.path),
+            "category_size": self.category_size,
+            "reason": self.reason,
+        }
+
+
+@dataclass
+class _CategoryGroup:
+    """Internal path-aware category group used by ``CategoryResolution``."""
+
+    labels: tuple[str, ...]
+    label: str
+    normalized_label: str
+    path_key: tuple[str, ...]
+    aliases: tuple[tuple[str, ...], ...]
+    product_ids: set[str] = field(default_factory=set)
+
+
+def normalize_category(value: object) -> str:
+    """Normalize a category phrase without substring matching.
+
+    Categories are compared as exact word tokens.  Thus ``men`` cannot match
+    ``women`` and punctuation/order differences such as ``A & B`` versus
+    ``B A`` are handled by the resolver's token-set comparison.
+    """
+
+    tokens = TOKEN_RE.findall(text_value(value).lower())
+    return " ".join(dict.fromkeys(token for token in tokens if token))
+
+
+def _constraint_value(constraint: object) -> tuple[str, str]:
+    """Read a hard-constraint-like object without importing session state."""
+
+    if isinstance(constraint, Mapping):
+        value = constraint.get("value", "")
+        polarity = constraint.get("polarity", "prefer")
+    else:
+        value = getattr(constraint, "value", constraint)
+        polarity = getattr(constraint, "polarity", "prefer")
+    return str(value or ""), str(polarity or "prefer").lower()
+
+
+def category_relevance(
+    record: ProductRecord,
+    *,
+    constraints: Sequence[object] = (),
+    query_evidence: Sequence[object] = (),
+) -> tuple[float, float, float]:
+    """Score category members before applying a bounded category budget.
+
+    The first component captures required/avoided constraint evidence, the
+    second captures deterministic conversational evidence, and the final
+    component is intentionally tiny so catalog popularity only breaks a
+    complete relevance tie.
+    """
+
+    text = record.canonical_text.lower()
+    constraint_score = 0.0
+    for constraint in constraints or ():
+        if not isinstance(constraint, (str, bytes)):
+            hardness = getattr(constraint, "hardness", None)
+            polarity = getattr(constraint, "polarity", None)
+            if isinstance(constraint, Mapping):
+                hardness = constraint.get("hardness", hardness)
+                polarity = constraint.get("polarity", polarity)
+            if str(hardness or "hard").lower() != "hard" and str(polarity or "prefer").lower() != "avoid":
+                continue
+        value, polarity = _constraint_value(constraint)
+        terms = safe_terms(value)
+        if not terms:
+            continue
+        match_ratio = sum(term in text for term in terms) / len(terms)
+        constraint_score += -match_ratio if polarity == "avoid" else match_ratio
+
+    evidence_terms: set[str] = set()
+    for evidence in query_evidence or ():
+        evidence_terms.update(safe_terms(evidence))
+    evidence_score = (
+        sum(term in text for term in evidence_terms) / len(evidence_terms)
+        if evidence_terms
+        else 0.0
+    )
+    popularity = math.log1p(max(record.rating_count or 0, 0)) + 0.01 * max(record.rating or 0.0, 0.0)
+    return constraint_score, evidence_score, popularity
+
+
 class CatalogRepository:
     """In-memory SQLite FTS5 repository with deterministic popular fallback."""
 
@@ -275,11 +399,16 @@ class CatalogRepository:
         self.connection = sqlite3.connect(":memory:")
         self.connection.row_factory = sqlite3.Row
         self.products: dict[str, ProductRecord] = {}
+        self._coarse_anchor_index: dict[str, tuple[str, ...]] = {}
+        self._category_groups: tuple[_CategoryGroup, ...] = ()
+        self._category_label_index: dict[str, tuple[str, ...]] = {}
+        self._category_counts: dict[str, int] = {}
         self._build_schema()
         if records is not None:
             self._load_records(records)
         elif self.catalog_path is not None and self.catalog_path.exists():
             self._load_jsonl(self.catalog_path)
+        self._build_category_index()
         self.connection.commit()
 
     def _build_schema(self) -> None:
@@ -342,6 +471,96 @@ class CatalogRepository:
             ),
         )
 
+    def _build_category_index(self) -> None:
+        """Build deterministic, path-aware category groups after catalog load.
+
+        A label may occur in multiple branches (for example ``Shoes`` under
+        both ``Men`` and ``Women``).  Keeping the complete path as the group
+        key lets ``resolve_category`` reject such an anchor as ambiguous,
+        while labels that occur in one branch can still be resolved directly.
+        Suffix aliases make combined anchors such as ``Accessories Wallets``
+        resolve to the leaf group without requiring the user to reproduce the
+        catalog's full root path.
+        """
+
+        groups: dict[tuple[str, ...], _CategoryGroup] = {}
+        coarse_alias_ids: dict[str, set[str]] = defaultdict(set)
+        coarse_excluded = {
+            "clothing",
+            "clothing shoes & jewelry",
+            "clothing, shoes & jewelry",
+        }
+        ordered_records = sorted(self.products.values(), key=lambda item: item.parent_asin)
+        for record in ordered_records:
+            labels = tuple(str(value).strip() for value in record.categories if str(value).strip())
+            if not labels:
+                continue
+
+            # Match the public protocol's coarse category construction: split
+            # each label on commas, remove generic roots, and keep the final
+            # two fragments.  A coarse alias may cover several branches, so
+            # retain the complete union of IDs already present in the catalog.
+            coarse_fragments: list[str] = []
+            for value in labels:
+                for fragment in value.split(","):
+                    fragment = fragment.strip()
+                    if fragment and fragment.lower() not in coarse_excluded:
+                        coarse_fragments.append(fragment)
+            if coarse_fragments:
+                coarse_alias = normalize_category(" ".join(coarse_fragments[-2:]))
+                if coarse_alias:
+                    coarse_alias_ids[coarse_alias].add(record.parent_asin)
+
+            normalized_labels = tuple(normalize_category(value) for value in labels)
+            for depth, label in enumerate(labels):
+                normalized_label = normalized_labels[depth]
+                if not normalized_label:
+                    continue
+                path_key = normalized_labels[: depth + 1]
+                group = groups.get(path_key)
+                if group is None:
+                    aliases: list[tuple[str, ...]] = []
+                    # All suffixes are bounded by the catalog row's category
+                    # depth and remain cheap for the released data.
+                    for start in range(depth + 1):
+                        alias_tokens = tuple(
+                            token
+                            for part in normalized_labels[start : depth + 1]
+                            for token in part.split()
+                            if token
+                        )
+                        if alias_tokens and alias_tokens not in aliases:
+                            aliases.append(alias_tokens)
+                    group = _CategoryGroup(
+                        labels=labels[: depth + 1],
+                        label=label,
+                        normalized_label=normalized_label,
+                        path_key=path_key,
+                        aliases=tuple(aliases),
+                    )
+                    groups[path_key] = group
+                group.product_ids.add(record.parent_asin)
+
+        self._category_groups = tuple(
+            sorted(
+                groups.values(),
+                key=lambda group: (group.normalized_label, len(group.path_key), group.path_key),
+            )
+        )
+        self._coarse_anchor_index = {
+            alias: tuple(sorted(parent_asins))
+            for alias, parent_asins in sorted(coarse_alias_ids.items())
+        }
+        label_ids: dict[str, set[str]] = defaultdict(set)
+        for group in self._category_groups:
+            label_ids[group.normalized_label].update(group.product_ids)
+        self._category_label_index = {
+            label: tuple(sorted(values)) for label, values in sorted(label_ids.items())
+        }
+        self._category_counts = {
+            label: len(values) for label, values in self._category_label_index.items()
+        }
+
     @property
     def ids(self) -> set[str]:
         return set(self.products)
@@ -349,6 +568,201 @@ class CatalogRepository:
     @property
     def records(self) -> tuple[ProductRecord, ...]:
         return tuple(self.products.values())
+
+    @property
+    def category_index(self) -> dict[str, tuple[str, ...]]:
+        """Return normalized label -> sorted product IDs for diagnostics/tests."""
+
+        return dict(self._category_label_index)
+
+    @property
+    def category_counts(self) -> dict[str, int]:
+        """Return normalized category sizes without exposing mutable indexes."""
+
+        return dict(self._category_counts)
+
+    def resolve_category(self, anchor: object) -> CategoryResolution:
+        """Resolve the most specific unambiguous catalog category.
+
+        Matching is token based and bounded to the precomputed category index.
+        An exact alias wins over a strict subset; ties with different product
+        sets are intentionally reported as ``ambiguous`` rather than guessed.
+        """
+
+        raw_anchor = text_value(anchor).strip()
+        anchor_tokens = tuple(dict.fromkeys(TOKEN_RE.findall(raw_anchor.lower())))
+        if not anchor_tokens:
+            return CategoryResolution(
+                anchor=raw_anchor,
+                status="unknown",
+                reason="empty_anchor",
+            )
+        coarse_alias = normalize_category(raw_anchor)
+        coarse_product_ids = self._coarse_anchor_index.get(coarse_alias)
+        if coarse_product_ids:
+            return CategoryResolution(
+                anchor=raw_anchor,
+                status="resolved_union",
+                category=raw_anchor,
+                normalized_category=coarse_alias,
+                matched_alias=coarse_alias,
+                product_ids=coarse_product_ids,
+                reason="coarse_anchor_union",
+            )
+        anchor_set = frozenset(anchor_tokens)
+
+        # Keep only the strongest alias for each path group.  A group may have
+        # both a leaf label and a longer suffix alias that match the anchor.
+        matches: list[tuple[tuple[int, int, int], _CategoryGroup, tuple[str, ...]]] = []
+        for group in self._category_groups:
+            best: tuple[tuple[int, int, int], tuple[str, ...]] | None = None
+            label_tokens = tuple(group.normalized_label.split())
+            # When the user names a catalog label directly, do not let a
+            # repeated parent token (e.g. ``Shirts -> T-Shirts``) outrank
+            # other branches carrying the same leaf label.  Direct leaf-label
+            # matches are unioned below; longer suffix aliases are reserved
+            # for genuinely combined anchors.
+            direct_label = tuple(dict.fromkeys(label_tokens)) == anchor_tokens
+            for alias in group.aliases:
+                alias_set = frozenset(alias)
+                if not alias_set:
+                    continue
+                if direct_label and alias != label_tokens:
+                    continue
+                if alias_set == anchor_set:
+                    strength = 2
+                elif alias_set < anchor_set:
+                    strength = 1
+                else:
+                    continue
+                # Path depth is deliberately not part of the match strength:
+                # the same leaf label can appear at different depths, and all
+                # branches sharing that strongest alias should be unioned.
+                # Keep repeated words in the alias length.  A category path
+                # such as ``Wallets, Card Cases & Money Organizers ->
+                # Wallets`` contains ``wallets`` twice; retaining that signal
+                # lets the combined anchor select the leaf path rather than
+                # collapsing back to its parent label.
+                rank = (strength, len(alias), 0)
+                if best is None or rank > best[0]:
+                    best = (rank, alias)
+            if best is not None:
+                matches.append((best[0], group, best[1]))
+
+        if not matches:
+            return CategoryResolution(
+                anchor=raw_anchor,
+                status="unknown",
+                reason="no_category_alias_match",
+            )
+
+        best_rank = max(match[0] for match in matches)
+        best_matches = [match for match in matches if match[0] == best_rank]
+        distinct_aliases = {frozenset(match[2]) for match in best_matches}
+        if len(distinct_aliases) > 1:
+            return CategoryResolution(
+                anchor=raw_anchor,
+                status="ambiguous",
+                reason="incomparable_category_matches",
+            )
+
+        distinct_sets = {frozenset(match[1].product_ids) for match in best_matches}
+
+        # The same product set can be represented by multiple equivalent path
+        # groups.  Pick the deepest/lexically stable one for diagnostics.
+        _, group, alias = sorted(
+            best_matches,
+            key=lambda match: (
+                -len(match[1].path_key),
+                match[1].path_key,
+                match[1].normalized_label,
+            ),
+        )[0]
+        if len(distinct_sets) == 1:
+            product_ids = tuple(sorted(group.product_ids))
+            status = "resolved"
+            reason = "exact_or_specific_alias"
+        else:
+            # Repeated labels such as ``Shoes`` can legitimately occur under
+            # several catalog branches.  Once the strongest alias is the
+            # same normalized phrase, union those branch members instead of
+            # silently selecting one and losing recall.  Ambiguous *different*
+            # aliases were rejected above.
+            union_ids: set[str] = set()
+            for _, candidate_group, _ in best_matches:
+                union_ids.update(candidate_group.product_ids)
+            product_ids = tuple(sorted(union_ids))
+            status = "resolved_union"
+            reason = "shared_alias_union"
+        return CategoryResolution(
+            anchor=raw_anchor,
+            status=status,
+            category=group.label,
+            normalized_category=group.normalized_label,
+            matched_alias=" ".join(alias),
+            path=group.labels,
+            product_ids=product_ids,
+            reason=reason,
+        )
+
+    def category_with_scores(
+        self,
+        anchor: object,
+        limit: int = 100,
+        *,
+        hard_constraints: Sequence[object] = (),
+        query_evidence: Sequence[object] = (),
+        resolution: CategoryResolution | None = None,
+    ) -> tuple[CategoryResolution, list[RetrievedProduct]]:
+        """Return a resolved category route in deterministic relevance order.
+
+        Every returned record is a member of the resolved category.  Supplied
+        hard-constraint values are matched before popularity is used, so a
+        relevant low-rating product is not discarded by an earlier popularity
+        truncation; unrelated products cannot enter this route.
+        """
+
+        resolution = resolution or self.resolve_category(anchor)
+        bounded_limit = max(int(limit), 0)
+        if not resolution.resolved or bounded_limit <= 0:
+            return resolution, []
+        records = [
+            self.products[parent_asin]
+            for parent_asin in resolution.product_ids
+            if parent_asin in self.products
+        ]
+        # Constraint and conversational evidence determine the category-route
+        # prefix before popularity is consulted.  This keeps a low-rating but
+        # semantically matching product in the allocated quota instead of
+        # losing it during an earlier popularity truncation.
+        records.sort(
+            key=lambda record: (
+                -category_relevance(
+                    record,
+                    constraints=hard_constraints,
+                    query_evidence=query_evidence,
+                )[0],
+                -category_relevance(
+                    record,
+                    constraints=hard_constraints,
+                    query_evidence=query_evidence,
+                )[1],
+                -category_relevance(
+                    record,
+                    constraints=hard_constraints,
+                    query_evidence=query_evidence,
+                )[2],
+                record.parent_asin,
+            )
+        )
+        output: list[RetrievedProduct] = []
+        for rank, record in enumerate(records[:bounded_limit], 1):
+            # The route's order is category-constrained first; this small
+            # monotonically decreasing score only makes the order stable when
+            # later route scores are merged.
+            score = 100.0 / (60.0 + rank)
+            output.append(RetrievedProduct(record, score, "category:exact", rank))
+        return resolution, output
 
     def get(self, parent_asin: object) -> ProductRecord | None:
         return self.products.get(str(parent_asin).strip())
@@ -437,8 +851,11 @@ class CatalogRepository:
         return [item.product for item in self.search_with_scores(query, limit, source=source)]
 
     def category_records(self, category: object, limit: int = 100) -> list[ProductRecord]:
-        """Find a category lexically, with popularity as a safe fallback."""
+        """Find a category exactly, with lexical fallback when unresolved."""
 
+        resolution, found = self.category_with_scores(category, limit)
+        if resolution.resolved:
+            return [item.product for item in found]
         return self.search(category, limit, source="category")
 
     def estimate_count(self, query: object) -> int:
@@ -479,9 +896,11 @@ class CatalogRepository:
 
 
 __all__ = [
+    "CategoryResolution",
     "CatalogRepository",
     "ProductRecord",
     "RetrievedProduct",
+    "normalize_category",
     "safe_match_expression",
     "safe_terms",
     "text_value",

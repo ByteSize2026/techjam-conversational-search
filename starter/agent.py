@@ -11,7 +11,14 @@ import time
 
 from .shopping_agent.catalog import CatalogRepository, ProductRecord, RetrievedProduct, safe_terms
 from .shopping_agent.config import AgentConfig
-from .shopping_agent.policy import CandidateGate, ClarificationPolicy, IntentRouter, RouteDecision
+from .shopping_agent.policy import (
+    CandidateGate,
+    ClarificationPolicy,
+    IntentRouter,
+    RouteDecision,
+    adaptive_category_budget,
+)
+from .shopping_agent.qwen_reranker import QwenCrossEncoderReranker
 from .shopping_agent.semantic_ranking import LLMSemanticRanker
 from .shopping_agent.state import (
     ALLOWED_ATTRIBUTES,
@@ -22,6 +29,10 @@ from .shopping_agent.state import (
     StateReducer,
     parse_intent_update,
 )
+
+
+ABSOLUTE_CAP = 600
+NON_CATEGORY_TAIL = 100
 
 
 class Agent:
@@ -51,20 +62,42 @@ class Agent:
         self.router = router or IntentRouter(retrieval_budget=self.config.retrieval_limit)
         self.candidate_gate = candidate_gate or CandidateGate()
         self.clarification_policy = clarification_policy or ClarificationPolicy()
-        self.semantic_ranker = semantic_ranker or LLMSemanticRanker(
-            client=model_client,
-            config=self.config,
-            candidate_limit=self.config.candidate_limit,
-        )
+        if semantic_ranker is not None:
+            # Explicit injection remains the highest-priority integration hook
+            # used by tests and benchmark replay.
+            self.semantic_ranker = semantic_ranker
+        elif model_client is not None:
+            # Preserve the existing local/API model-client contract when a
+            # caller supplies a client directly.
+            self.semantic_ranker = LLMSemanticRanker(
+                client=model_client,
+                config=self.config,
+                candidate_limit=self.config.candidate_limit,
+            )
+        elif getattr(self.config, "qwen_reranker_enabled", False):
+            # Qwen is opt-in only when an explicit absolute local checkpoint
+            # path is configured.  Construction is lazy and therefore does
+            # not import sentence_transformers or load model assets here.
+            self.semantic_ranker = QwenCrossEncoderReranker(config=self.config)
+        else:
+            self.semantic_ranker = LLMSemanticRanker(
+                client=None,
+                config=self.config,
+                candidate_limit=self.config.candidate_limit,
+            )
         self.last_diagnostics: dict[str, object] = {
             "event": "initialized",
             "catalog_size": len(self.repository),
             "model_backends": self._model_backends(),
         }
+        self._last_retrieval_diagnostics: dict[str, object] = {}
 
     def _model_backends(self) -> list[str]:
         names = getattr(getattr(self.semantic_ranker, "client", None), "backend_names", ())
-        return [str(name) for name in names] if isinstance(names, (list, tuple)) else []
+        if isinstance(names, (list, tuple)):
+            return [str(name) for name in names]
+        backend_name = getattr(self.semantic_ranker, "backend_name", None)
+        return [str(backend_name)] if isinstance(backend_name, str) and backend_name else []
 
     def reset(self, session_id: str, user_profile: dict) -> None:
         """Replace any prior state for this session ID."""
@@ -117,6 +150,7 @@ class Agent:
         route = self.router.decide(context)
         state.active_route = route.mode
         candidates = self._retrieve(state, message, route.retrieval_budget, route=route)
+        retrieval_diagnostics = dict(self._last_retrieval_diagnostics)
         stats = self._stats(state, candidates, message)
         state.last_candidate_stats = stats
         context = state.runtime_context(
@@ -132,12 +166,37 @@ class Agent:
         # candidate set into feature ranking or the model backend.
         route_budget = max(int(getattr(route, "retrieval_budget", self.config.retrieval_limit)), 0)
         gate_budget = max(int(getattr(gate, "retrieval_limit", route_budget)), 0)
-        effective_budget = min(route_budget, gate_budget)
+        category_resolved = retrieval_diagnostics.get("category_resolution") in {
+            "resolved",
+            "resolved_union",
+        }
+        adaptive_enabled = bool(
+            getattr(self.config, "adaptive_category_recall_enabled", True)
+        )
+        if category_resolved and adaptive_enabled:
+            # The category route already applied its own bounded quota.  The
+            # gate decides only whether semantic ranking runs; it must not
+            # discard the cheap category/feature pool before ranking.
+            effective_budget = len(candidates)
+        else:
+            # Preserve the bounded fixed-budget fallback for unknown or
+            # ambiguous anchors and for an explicit rollback configuration.
+            effective_budget = min(route_budget, gate_budget)
         ranked = self._feature_rank(state, candidates, context, limit=effective_budget)
         semantic = None
         semantic_input_count = 0
         if gate.run_semantic_ranker and ranked:
-            semantic_candidates = ranked[: min(effective_budget, self.config.candidate_limit)]
+            ranker_limit = getattr(self.semantic_ranker, "candidate_limit", self.config.candidate_limit)
+            try:
+                ranker_limit = max(int(ranker_limit), 1)
+            except (TypeError, ValueError):
+                ranker_limit = self.config.candidate_limit
+            # The semantic stage is a separate cost boundary from cheap
+            # feature recall.  Keep it at Top-30 even if a caller supplies a
+            # larger general candidate_limit or an injected ranker advertises
+            # a wider input capacity.
+            semantic_limit = min(30, effective_budget, self.config.candidate_limit, ranker_limit)
+            semantic_candidates = ranked[: max(semantic_limit, 0)]
             semantic_input_count = len(semantic_candidates)
             semantic = self._semantic_rank(context, semantic_candidates, limit=effective_budget)
             if semantic is not None:
@@ -192,6 +251,7 @@ class Agent:
             "model_backend": getattr(semantic, "backend", None),
             "model_failures": self._failures(semantic),
             "usage": usage,
+            **retrieval_diagnostics,
         }
         return result
 
@@ -227,6 +287,62 @@ class Agent:
         buying_weight = max(float(getattr(route, "buying_weight", 0.0)), 0.0)
         browsing_weight = max(float(getattr(route, "browsing_weight", 0.0)), 0.0)
         per_query = min(max(int(budget), 20), 120)
+        adaptive_enabled = bool(getattr(self.config, "adaptive_category_recall_enabled", True))
+
+        # Category retrieval is an independent route.  It is resolved before
+        # lexical route construction and its quota is never competed away by
+        # profile, constraint, or popularity candidates.
+        category_resolution = self.repository.resolve_category(state.category_anchor or "")
+        category_budget = 0
+        category_ratio: float | None = None
+        category_route: list[RetrievedProduct] = []
+        if adaptive_enabled and category_resolution.resolved:
+            hard_count = sum(item.hardness == "hard" for item in state.active_constraints)
+            small_limit = getattr(self.config, "category_recall_small_category_limit", 500)
+            minimum = getattr(self.config, "category_recall_min_budget", 100)
+            maximum = getattr(self.config, "category_recall_max_budget", 400)
+            category_budget = adaptive_category_budget(
+                category_resolution.category_size,
+                hard_count,
+                small_category_limit=small_limit,
+                minimum=minimum,
+                maximum=maximum,
+                browsing_ratio=getattr(self.config, "category_recall_browsing_ratio", 0.50),
+                one_hard_ratio=getattr(self.config, "category_recall_one_hard_ratio", 0.35),
+                many_hard_ratio=getattr(self.config, "category_recall_many_hard_ratio", 0.20),
+            )
+            if category_resolution.category_size <= int(small_limit):
+                category_ratio = 1.0
+            elif hard_count <= 0:
+                category_ratio = float(getattr(self.config, "category_recall_browsing_ratio", 0.50))
+            elif hard_count == 1:
+                category_ratio = float(getattr(self.config, "category_recall_one_hard_ratio", 0.35))
+            else:
+                category_ratio = float(getattr(self.config, "category_recall_many_hard_ratio", 0.20))
+            _, category_route = self.repository.category_with_scores(
+                state.category_anchor or "",
+                category_budget,
+                hard_constraints=[
+                    item
+                    for item in state.active_constraints
+                    if item.hardness == "hard" or item.polarity == "avoid"
+                ],
+                query_evidence=(
+                    latest,
+                    *state.query_terms,
+                    *(item.value for item in state.active_preferences),
+                ),
+                resolution=category_resolution,
+            )
+            category_prefix = (
+                "buying"
+                if mode == "buying" or (mode == "mixed" and buying_weight >= browsing_weight)
+                else "browsing"
+            )
+            category_route = [
+                RetrievedProduct(item.product, item.score, f"{category_prefix}:category_exact", item.rank)
+                for item in category_route
+            ]
 
         # Each tuple is (query, source, route name, source weight).  Keeping
         # route and source in the provenance string makes the final candidate
@@ -300,10 +416,9 @@ class Agent:
             fallback_route = "buying" if mode == "buying" else "browsing"
             unique = [("", "popularity", fallback_route, 1.0, 0.25)]
 
-        # Merge each route separately so Browsing can diversify before Mixed
-        # performs its union.  Scores are route_weight * source_weight * RRF;
-        # unlike the old global merge, changing the Router decision changes
-        # both query selection and the resulting candidate scores.
+        # Merge lexical routes separately so Browsing can diversify before
+        # Mixed performs its union.  Scores are route_weight * source_weight
+        # * RRF; category candidates are merged first below to preserve quota.
         route_merged: dict[str, dict[str, dict[str, object]]] = {"buying": {}, "browsing": {}}
         for query, source, route_name, route_weight, source_weight in unique[:8]:
             labeled_source = f"{route_name}:{source}"
@@ -323,51 +438,133 @@ class Agent:
                     entry["sources"].append(labeled_source)
 
         route_outputs: dict[str, list[RetrievedProduct]] = {"buying": [], "browsing": []}
-        for route_name, merged in route_merged.items():
-            output: list[RetrievedProduct] = []
-            for entry in merged.values():
+        for route_name, merged_route in route_merged.items():
+            output_route: list[RetrievedProduct] = []
+            for entry in merged_route.values():
                 product = entry["product"]
                 if isinstance(product, ProductRecord):
                     source = "+".join(str(value) for value in entry["sources"])
-                    output.append(
+                    output_route.append(
                         RetrievedProduct(product, float(entry["score"]) + float(entry["best"]), source, 0)
                     )
-            output.sort(key=lambda item: (-item.score, item.parent_asin))
+            output_route.sort(key=lambda item: (-item.score, item.parent_asin))
             if route_name == "browsing":
-                output = self._diversify(output)
-            route_outputs[route_name] = output
+                output_route = self._diversify(output_route)
+            route_outputs[route_name] = output_route
 
         merged: dict[str, dict[str, object]] = {}
+        category_ids = {item.parent_asin for item in category_route}
+
+        def add_route_item(item: RetrievedProduct) -> None:
+            entry = merged.setdefault(
+                item.parent_asin,
+                {"product": item.product, "score": 0.0, "sources": [], "category": False},
+            )
+            entry["score"] = float(entry["score"]) + item.score
+            if item.parent_asin in category_ids:
+                entry["category"] = True
+            if isinstance(entry["sources"], list):
+                for source in item.source.split("+"):
+                    if source not in entry["sources"]:
+                        entry["sources"].append(source)
+
+        # Adding the exact category route first creates a stable protected
+        # prefix.  Dedupe later routes into those entries without spending a
+        # second category quota.
+        for item in category_route:
+            add_route_item(item)
         for route_name in ("buying", "browsing"):
             for item in route_outputs[route_name]:
-                entry = merged.setdefault(
-                    item.parent_asin,
-                    {"product": item.product, "score": 0.0, "sources": []},
-                )
-                entry["score"] = float(entry["score"]) + item.score
-                if isinstance(entry["sources"], list):
-                    for source in item.source.split("+"):
-                        if source not in entry["sources"]:
-                            entry["sources"].append(source)
-        output = [
-            RetrievedProduct(
-                entry["product"],
-                float(entry["score"]),
-                "+".join(str(value) for value in entry["sources"]),
-                0,
-            )
-            for entry in merged.values()
-            if isinstance(entry["product"], ProductRecord)
+                add_route_item(item)
+
+        category_order = [item.parent_asin for item in category_route if item.parent_asin in merged]
+        category_order_set = set(category_order)
+        remaining = [
+            entry
+            for parent_asin, entry in merged.items()
+            if parent_asin not in category_order_set
         ]
+        remaining.sort(
+            key=lambda entry: (
+                -float(entry["score"]),
+                str(entry["product"].parent_asin) if isinstance(entry["product"], ProductRecord) else "",
+            )
+        )
+        output: list[RetrievedProduct] = []
+        for parent_asin in category_order:
+            entry = merged[parent_asin]
+            if isinstance(entry["product"], ProductRecord):
+                output.append(
+                    RetrievedProduct(
+                        entry["product"],
+                        float(entry["score"]),
+                        "+".join(str(value) for value in entry["sources"]),
+                        0,
+                    )
+                )
+        for entry in remaining:
+            if isinstance(entry["product"], ProductRecord):
+                output.append(
+                    RetrievedProduct(
+                        entry["product"],
+                        float(entry["score"]),
+                        "+".join(str(value) for value in entry["sources"]),
+                        0,
+                    )
+                )
         if not output:
             output = [
                 RetrievedProduct(product, 0.0, f"{mode}:popularity", index)
                 for index, product in enumerate(self.repository.popular(per_query), 1)
             ]
-        output.sort(key=lambda item: (-item.score, item.parent_asin))
-        if mode == "browsing":
+
+        base_limit = max(per_query * 2, self.config.candidate_limit)
+        if category_order:
+            # Keep the category quota independent while reserving a bounded
+            # tail for lexical/constraint/profile-only candidates.  The
+            # absolute cap is deliberately finite even for large categories.
+            non_category_tail = min(base_limit, NON_CATEGORY_TAIL)
+            pool_limit = min(ABSOLUTE_CAP, len(category_order) + non_category_tail)
+        else:
+            non_category_tail = min(base_limit, ABSOLUTE_CAP)
+            pool_limit = non_category_tail
+        # Do not diversify the protected prefix: every category quota item
+        # stays in the cheap feature pool.  Only the non-category tail is
+        # diversified for Browsing.
+        if mode == "browsing" and category_order:
+            protected = output[: len(category_order)]
+            tail = self._diversify(output[len(category_order) :])
+            output = protected + tail
+        elif mode == "browsing":
             output = self._diversify(output)
-        return output[: max(per_query * 2, self.config.candidate_limit)]
+        output = output[:pool_limit]
+
+        resolution_status = category_resolution.status if adaptive_enabled else "disabled"
+        output_ids = {candidate.parent_asin for candidate in output}
+        self._last_retrieval_diagnostics = {
+            "category_resolution": resolution_status,
+            "resolved_category": category_resolution.category if category_resolution.resolved else None,
+            "category_resolution_reason": (
+                "adaptive_disabled" if not adaptive_enabled else category_resolution.reason
+            ),
+            "category_size": category_resolution.category_size if adaptive_enabled else 0,
+            "category_recall_ratio": category_ratio,
+            "category_route_budget": category_budget,
+            "category_route_candidate_count": len(category_route),
+            "category_route_preserved_count": sum(item.parent_asin in output_ids for item in category_route),
+            "route_candidate_counts": {
+                "category": len(category_route),
+                "buying": len(route_outputs["buying"]),
+                "browsing": len(route_outputs["browsing"]),
+            },
+            "route_union_size": len(merged),
+            "cheap_candidate_pool_limit": pool_limit,
+            "cheap_candidate_pool_size": len(output),
+            "cheap_candidate_pool_absolute_cap": ABSOLUTE_CAP,
+            "non_category_tail_limit": non_category_tail,
+            "non_category_tail_count": max(len(output) - len(category_order), 0),
+        }
+        return output
 
     @staticmethod
     def _diversify(candidates: Sequence[RetrievedProduct], limit: int | None = None) -> list[RetrievedProduct]:
@@ -472,6 +669,12 @@ class Agent:
             product = item.product
             text = product.canonical_text.lower()
             score = item.score + 0.18 * sum(term in text for term in query_terms)
+            # Category membership is established by the exact category route
+            # before this stage.  Give that route a relevance-first boost so a
+            # globally popular but unrelated lexical hit cannot displace a
+            # valid member merely because it has more ratings.
+            if any(source.endswith(":category_exact") for source in item.source.split("+")):
+                score += 6.0
             if context.category_anchor:
                 score += 1.8 * sum(term in text for term in safe_terms(context.category_anchor))
             for constraint in state.active_constraints:

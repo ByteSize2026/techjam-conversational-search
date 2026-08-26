@@ -1,6 +1,12 @@
 """Composable building blocks for the shopping-agent implementation."""
 
-from .catalog import CatalogRepository, ProductRecord, RetrievedProduct
+from .catalog import (
+    CategoryResolution,
+    CatalogRepository,
+    ProductRecord,
+    RetrievedProduct,
+    normalize_category,
+)
 from .config import AgentConfig
 from .model import (
     BackendFailure,
@@ -18,6 +24,11 @@ from .model import (
     TokenUsage,
 )
 from .semantic_ranking import LLMSemanticRanker, SemanticRankingResult
+from .qwen_reranker import (
+    BACKEND_NAME as QWEN_RERANKER_BACKEND_NAME,
+    QwenCrossEncoderReranker,
+    SHOPPING_RELEVANCE_INSTRUCTION,
+)
 from .state import (
     ALLOWED_ATTRIBUTES,
     CandidateStats,
@@ -31,11 +42,17 @@ from .state import (
     parse_intent_update,
 )
 from .policy import (
+    CATEGORY_RECALL_MAX_LIMIT,
+    CATEGORY_RECALL_MIN_LIMIT,
+    CATEGORY_RECALL_SMALL_LIMIT,
     CandidateGate,
     CandidateGateDecision,
     ClarificationPolicy,
     IntentRouter,
     RouteDecision,
+    adaptive_category_budget,
+    category_recall_budget,
+    category_recall_ratio,
 )
 
 __all__ = [
@@ -46,10 +63,14 @@ __all__ = [
     "BackendRequestError",
     "BackendResponse",
     "BackendValidationError",
+    "CATEGORY_RECALL_MAX_LIMIT",
+    "CATEGORY_RECALL_MIN_LIMIT",
+    "CATEGORY_RECALL_SMALL_LIMIT",
     "CandidateGate",
     "CandidateGateDecision",
     "CandidateStats",
     "CatalogRepository",
+    "CategoryResolution",
     "ClarificationPolicy",
     "Constraint",
     "ConstraintMutation",
@@ -58,6 +79,9 @@ __all__ = [
     "LocalModelBackend",
     "LocalOpenAIBackend",
     "LLMSemanticRanker",
+    "QWEN_RERANKER_BACKEND_NAME",
+    "QwenCrossEncoderReranker",
+    "SHOPPING_RELEVANCE_INSTRUCTION",
     "IntentRouter",
     "IntentUpdate",
     "ModelCompletionResult",
@@ -66,6 +90,10 @@ __all__ = [
     "ProductRecord",
     "RetrievedProduct",
     "RouteDecision",
+    "adaptive_category_budget",
+    "category_recall_budget",
+    "category_recall_ratio",
+    "normalize_category",
     "RuntimeContext",
     "SessionState",
     "SessionStore",
