@@ -39,6 +39,7 @@ from .state import (
     SessionState,
     SessionStore,
     StateReducer,
+    normalize_constraint_value,
     parse_intent_update,
 )
 from .policy import (
@@ -48,11 +49,20 @@ from .policy import (
     CandidateGate,
     CandidateGateDecision,
     ClarificationPolicy,
+    CommitDecision,
     IntentRouter,
+    RankEvidence,
+    RecommendationCommitPolicy,
     RouteDecision,
     adaptive_category_budget,
     category_recall_budget,
     category_recall_ratio,
+)
+from .structured_pool import (
+    ConstraintApplication,
+    StructuredCandidatePool,
+    StructuredPoolResult,
+    build_structured_pool,
 )
 
 __all__ = [
@@ -68,6 +78,7 @@ __all__ = [
     "CATEGORY_RECALL_SMALL_LIMIT",
     "CandidateGate",
     "CandidateGateDecision",
+    "CommitDecision",
     "CandidateStats",
     "CatalogRepository",
     "CategoryResolution",
@@ -90,6 +101,8 @@ __all__ = [
     "ProductRecord",
     "RetrievedProduct",
     "RouteDecision",
+    "RankEvidence",
+    "RecommendationCommitPolicy",
     "adaptive_category_budget",
     "category_recall_budget",
     "category_recall_ratio",
@@ -100,5 +113,10 @@ __all__ = [
     "StateReducer",
     "TieredModelClient",
     "TokenUsage",
+    "normalize_constraint_value",
     "parse_intent_update",
+    "ConstraintApplication",
+    "StructuredCandidatePool",
+    "StructuredPoolResult",
+    "build_structured_pool",
 ]

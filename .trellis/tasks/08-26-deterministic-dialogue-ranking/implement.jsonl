@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/agent/index.md", "reason": "Agent 接口、状态与输出合同"}
+{"file": ".trellis/spec/agent/contract-and-state.md", "reason": "会话隔离、Intent Override 与 Boundary 规则"}
+{"file": ".trellis/spec/evaluator/protocol-and-scoring.md", "reason": "首次命中、动态推荐长度与评分权衡"}
+{"file": ".trellis/spec/guides/offline-reproducibility.md", "reason": "无模型无网络的复现边界"}
+{"file": ".trellis/tasks/08-26-deterministic-dialogue-ranking/research/competitor-architecture.md", "reason": "竞争架构与消融证据"}

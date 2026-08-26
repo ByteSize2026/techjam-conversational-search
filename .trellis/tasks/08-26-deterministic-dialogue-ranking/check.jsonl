@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/testing/index.md", "reason": "完整 unittest 质量门"}
+{"file": ".trellis/spec/testing/unittest-fixtures.md", "reason": "状态、策略和小 catalog fixture 模式"}
+{"file": ".trellis/spec/evaluator/protocol-and-scoring.md", "reason": "核对场景与评分不变式"}
+{"file": ".trellis/spec/guides/change-impact.md", "reason": "跨层回归矩阵"}
+{"file": ".trellis/tasks/08-26-deterministic-dialogue-ranking/research/competitor-architecture.md", "reason": "核对架构目标与禁用 LLM 范围"}

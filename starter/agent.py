@@ -14,7 +14,10 @@ from .shopping_agent.config import AgentConfig
 from .shopping_agent.policy import (
     CandidateGate,
     ClarificationPolicy,
+    CommitDecision,
     IntentRouter,
+    RankEvidence,
+    RecommendationCommitPolicy,
     RouteDecision,
     adaptive_category_budget,
 )
@@ -27,8 +30,10 @@ from .shopping_agent.state import (
     SessionState,
     SessionStore,
     StateReducer,
+    normalize_constraint_value,
     parse_intent_update,
 )
+from .shopping_agent.structured_pool import StructuredCandidatePool, StructuredPoolResult
 
 
 ABSOLUTE_CAP = 600
@@ -49,6 +54,7 @@ class Agent:
         router: IntentRouter | None = None,
         candidate_gate: CandidateGate | None = None,
         clarification_policy: ClarificationPolicy | None = None,
+        commit_policy: RecommendationCommitPolicy | None = None,
     ) -> None:
         self.catalog_path = Path(catalog_path)
         self.config = config or AgentConfig.from_env()
@@ -62,6 +68,18 @@ class Agent:
         self.router = router or IntentRouter(retrieval_budget=self.config.retrieval_limit)
         self.candidate_gate = candidate_gate or CandidateGate()
         self.clarification_policy = clarification_policy or ClarificationPolicy()
+        self.structured_pool = StructuredCandidatePool(
+            self.repository,
+            enabled=bool(getattr(self.config, "structured_pool_enabled", True)),
+        )
+        self.commit_policy = commit_policy or RecommendationCommitPolicy(
+            commit_all_threshold=getattr(self.config, "commit_all_threshold", 5),
+            partial_threshold=getattr(self.config, "partial_commit_threshold", 25),
+            partial_limit=getattr(self.config, "partial_commit_limit", 1),
+            no_progress_force_commit=getattr(self.config, "no_progress_force_commit", 2),
+            top1_margin_threshold=getattr(self.config, "commit_top1_margin_threshold", 0.30),
+            top3_stability_threshold=getattr(self.config, "commit_top3_stability_threshold", 0.66),
+        )
         if semantic_ranker is not None:
             # Explicit injection remains the highest-priority integration hook
             # used by tests and benchmark replay.
@@ -145,12 +163,41 @@ class Agent:
         old_epoch = state.intent_epoch
         update = parse_intent_update(message, turn=turn)
         self.reducer.apply(state, update, turn=turn)
+        # Capture the post-reducer intent before later diagnostics or ranking
+        # stages mutate derived state (for example a softened pool key).
+        intent_fingerprint = state.fingerprint()
         state.record_message(turn, message)
         context = state.runtime_context(turn=turn, remaining_turns=max(10 - turn, 0))
         route = self.router.decide(context)
         state.active_route = route.mode
         candidates = self._retrieve(state, message, route.retrieval_budget, route=route)
         retrieval_diagnostics = dict(self._last_retrieval_diagnostics)
+        structured_pool = self.structured_pool.build(state)
+        if structured_pool.softened_constraint_keys:
+            state.softened_constraint_keys.update(structured_pool.softened_constraint_keys)
+        if structured_pool.resolved and structured_pool.ids:
+            # Rehydrate the complete category pool from catalog records.  IDs
+            # already present in lexical/category retrieval retain provenance;
+            # the remaining members are intentionally admitted with a neutral
+            # score so later ranking, rather than recall budget, decides them.
+            retrieved_by_id = {item.parent_asin: item for item in candidates}
+            candidates = [
+                retrieved_by_id.get(
+                    parent_asin,
+                    RetrievedProduct(
+                        self.repository.products[parent_asin],
+                        0.0,
+                        "structured:category",
+                        0,
+                    ),
+                )
+                for parent_asin in structured_pool.ids
+                if parent_asin in self.repository.products
+            ]
+            # Retrieval diagnostics describe the pool handed to the feature
+            # ranker.  Once the full structured category has replaced the
+            # bounded route union, expose that larger deterministic pool.
+            retrieval_diagnostics["cheap_candidate_pool_size"] = len(candidates)
         stats = self._stats(state, candidates, message)
         state.last_candidate_stats = stats
         context = state.runtime_context(
@@ -166,14 +213,13 @@ class Agent:
         # candidate set into feature ranking or the model backend.
         route_budget = max(int(getattr(route, "retrieval_budget", self.config.retrieval_limit)), 0)
         gate_budget = max(int(getattr(gate, "retrieval_limit", route_budget)), 0)
-        category_resolved = retrieval_diagnostics.get("category_resolution") in {
-            "resolved",
-            "resolved_union",
-        }
+        legacy_category_resolved = retrieval_diagnostics.get(
+            "category_resolution"
+        ) in {"resolved", "resolved_union"}
         adaptive_enabled = bool(
             getattr(self.config, "adaptive_category_recall_enabled", True)
         )
-        if category_resolved and adaptive_enabled:
+        if structured_pool.resolved or (legacy_category_resolved and adaptive_enabled):
             # The category route already applied its own bounded quota.  The
             # gate decides only whether semantic ranking runs; it must not
             # discard the cheap category/feature pool before ranking.
@@ -201,6 +247,13 @@ class Agent:
             semantic = self._semantic_rank(context, semantic_candidates, limit=effective_budget)
             if semantic is not None:
                 ranked = self._apply_semantic(ranked, semantic)
+        previous_ranked_ids = tuple(state.previous_ranked_ids)
+        state.update_progress(
+            structured_pool.ids if structured_pool.resolved else [item.parent_asin for item in candidates],
+            [item.parent_asin for item in ranked],
+            intent_fingerprint=intent_fingerprint,
+        )
+        rank_evidence = self._rank_evidence(ranked, previous_ranked_ids, state)
         records = [item.product for item in ranked]
         ask_attribute = self.clarification_policy.choose_attribute(
             state,
@@ -208,10 +261,21 @@ class Agent:
             stats,
             turn=turn,
             remaining_turns=max(10 - turn, 0),
+            reopen_clarification=update.reopen_clarification,
         )
         if ask_attribute:
             state.record_asked(ask_attribute)
-        ids = self._valid_ids([item.parent_asin for item in ranked], limit)
+        if bool(getattr(self.config, "commit_policy_enabled", True)):
+            commit_decision = self.commit_policy.decide(
+                rank_evidence,
+                state,
+                turn=turn,
+                top_k=limit,
+            )
+        else:
+            commit_decision = CommitDecision("full", limit, "commit_policy_disabled")
+        recommendation_limit = min(limit, max(int(commit_decision.recommendation_limit), 0))
+        ids = self._valid_ids([item.parent_asin for item in ranked], recommendation_limit)
         state.last_candidate_ids = list(ids)
         state.record_recommendations(ids)
         result: dict[str, object] = {
@@ -244,9 +308,26 @@ class Agent:
             "candidate_count": len(candidates),
             "retrieval_sources": self._source_counts(candidates),
             "candidate_stats": stats.as_dict(),
+            "structured_pool": structured_pool.as_dict(),
+            "structured_pool_size": structured_pool.final_size,
+            "structured_pool_applied_constraints": [
+                item.as_dict() for item in structured_pool.applied_constraints
+            ],
+            "structured_pool_softened_constraints": [
+                item.as_dict() for item in structured_pool.softened_constraints
+            ],
+            "rank_evidence": rank_evidence.as_dict(),
+            "commit": commit_decision.as_dict(),
             "recommendation_count": len(ids),
             "asked_attribute": ask_attribute,
             "no_preference": sorted(state.no_preference),
+            "attribute_exhausted": sorted(state.attribute_exhausted),
+            "global_exhausted": state.global_exhausted,
+            "boundary_seen": state.boundary_seen,
+            "exhaustion_reason": state.exhaustion_reason,
+            "ask_counts": dict(state.ask_counts),
+            "no_progress_streak": state.no_progress_streak,
+            "softened_constraint_keys": [list(item) for item in sorted(state.softened_constraint_keys)],
             "seen_in_epoch": len(state.seen_recommendations),
             "model_backend": getattr(semantic, "backend", None),
             "model_failures": self._failures(semantic),
@@ -623,6 +704,51 @@ class Agent:
         )
 
     @staticmethod
+    def _rank_evidence(
+        ranked: Sequence[RetrievedProduct],
+        previous_ranked_ids: Sequence[str] = (),
+        state: SessionState | None = None,
+    ) -> RankEvidence:
+        """Derive relative, target-free confidence signals for CommitGate."""
+
+        values: list[float] = []
+        for item in ranked:
+            try:
+                value = float(item.score)
+            except (TypeError, ValueError):
+                value = 0.0
+            values.append(value if math.isfinite(value) else 0.0)
+        margin = 0.0
+        if len(values) >= 2:
+            span = values[0] - values[-1]
+            if span > 1e-12:
+                margin = min(max((values[0] - values[1]) / span, 0.0), 1.0)
+        current_top = {item.parent_asin for item in ranked[:3]}
+        previous_top = {str(value).strip() for value in previous_ranked_ids[:3] if str(value).strip()}
+        top1_stability = (
+            1.0
+            if ranked and previous_ranked_ids and ranked[0].parent_asin == str(previous_ranked_ids[0]).strip()
+            else 0.0
+        )
+        stability = (
+            len(current_top & previous_top) / len(current_top | previous_top)
+            if current_top and previous_top
+            else 0.0
+        )
+        hard_count = len(state.active_constraints) if state is not None else 0
+        return RankEvidence(
+            pool_size=len(ranked),
+            top1_margin=margin,
+            top1_stability=top1_stability,
+            top3_stability=stability,
+            hard_constraint_count=sum(
+                item.hardness == "hard" for item in state.active_constraints
+            ) if state is not None else hard_count,
+            no_progress_streak=getattr(state, "no_progress_streak", 0) if state is not None else 0,
+            ranked_ids=tuple(item.parent_asin for item in ranked[:10]),
+        )
+
+    @staticmethod
     def _entropy(values: Sequence[str]) -> float:
         counts = Counter(value for value in values if value)
         total = sum(counts.values())
@@ -663,12 +789,21 @@ class Agent:
         input_candidates = list(candidates)
         if limit is not None:
             input_candidates = input_candidates[: max(int(limit), 0)]
-        query_terms = set(safe_terms(" ".join(state.query_terms)))
+        query_terms = list(safe_terms(" ".join(state.query_terms)))
+        bm25_scores, title_scores = self._lexical_rank_scores(input_candidates, query_terms)
         scored: list[tuple[float, int, RetrievedProduct]] = []
         for index, item in enumerate(input_candidates):
             product = item.product
             text = product.canonical_text.lower()
-            score = item.score + 0.18 * sum(term in text for term in query_terms)
+            score = item.score
+            if bool(getattr(self.config, "ranking_bm25_enabled", True)):
+                score += float(getattr(self.config, "ranking_bm25_weight", 0.18)) * bm25_scores.get(
+                    item.parent_asin, 0.0
+                )
+            if bool(getattr(self.config, "ranking_title_coverage_enabled", True)):
+                score += float(
+                    getattr(self.config, "ranking_title_coverage_weight", 0.12)
+                ) * title_scores.get(item.parent_asin, 0.0)
             # Category membership is established by the exact category route
             # before this stage.  Give that route a relevance-first boost so a
             # globally popular but unrelated lexical hit cannot displace a
@@ -678,36 +813,109 @@ class Agent:
             if context.category_anchor:
                 score += 1.8 * sum(term in text for term in safe_terms(context.category_anchor))
             for constraint in state.active_constraints:
-                terms = safe_terms(constraint.value)
+                terms = safe_terms(
+                    normalize_constraint_value(constraint.attribute, constraint.value)
+                )
                 if not terms:
                     continue
                 ratio = sum(term in text for term in terms) / len(terms)
                 if constraint.polarity == "avoid":
                     score -= 3.0 * ratio
-                elif constraint.hardness == "hard":
+                elif constraint.hardness == "hard" and (
+                    str(constraint.attribute).lower(),
+                    normalize_constraint_value(
+                        constraint.attribute, constraint.value
+                    ).lower(),
+                ) not in state.softened_constraint_keys:
                     score += 5.0 * ratio
                 else:
                     score += 1.6 * ratio
             tags = state.profile.get("preference_tags", ())
             if isinstance(tags, str):
                 tags = (tags,)
-            if isinstance(tags, (list, tuple, set)):
-                score += 0.08 * sum(bool(safe_terms(tag)) and safe_terms(tag)[0] in text for tag in tags)
-            if product.rating is not None:
-                score += 0.05 * max(0.0, min(float(product.rating), 5.0))
-            if product.rating_count is not None:
-                score += 0.03 * math.log1p(max(product.rating_count, 0))
+            if bool(getattr(self.config, "ranking_profile_enabled", True)) and isinstance(
+                tags, (list, tuple, set)
+            ):
+                score += float(getattr(self.config, "ranking_profile_weight", 0.08)) * sum(
+                    bool(safe_terms(tag)) and safe_terms(tag)[0] in text for tag in tags
+                )
+            if bool(getattr(self.config, "ranking_rating_enabled", True)) and product.rating is not None:
+                score += float(getattr(self.config, "ranking_rating_weight", 0.05)) * max(
+                    0.0, min(float(product.rating), 5.0)
+                )
+            if bool(getattr(self.config, "ranking_popularity_enabled", True)) and product.rating_count is not None:
+                score += float(getattr(self.config, "ranking_popularity_weight", 0.03)) * math.log1p(
+                    max(product.rating_count, 0)
+                )
             if item.parent_asin in state.seen_recommendations:
                 score -= 8.0
             scored.append((score, index, item))
         scored.sort(key=lambda value: (-value[0], value[1], value[2].parent_asin))
-        ordered = [value[2] for value in scored]
+        # Carry the fused deterministic score forward.  Commit confidence
+        # must reflect the score that actually produced the order, rather
+        # than the earlier retrieval-only score on RetrievedProduct.
+        ordered = [
+            RetrievedProduct(item.product, float(score), item.source, rank)
+            for rank, (score, _index, item) in enumerate(scored, 1)
+        ]
         unseen = [item for item in ordered if item.parent_asin not in state.seen_recommendations]
         ordered = unseen + [item for item in ordered if item.parent_asin in state.seen_recommendations] if unseen else ordered
         if context.route_hint == "browsing":
             ordered = self._diversify(ordered)
         output_limit = max(int(limit), 0) if limit is not None else max(self.config.retrieval_limit, self.config.candidate_limit)
         return ordered[:output_limit]
+
+    @staticmethod
+    def _lexical_rank_scores(
+        candidates: Sequence[RetrievedProduct],
+        query_terms: Sequence[str],
+    ) -> tuple[dict[str, float], dict[str, float]]:
+        """Compute normalized BM25-like and title-coverage evidence locally."""
+
+        if not candidates or not query_terms:
+            return {}, {}
+        token_re = re.compile(r"[^\W_]+", re.UNICODE)
+        documents: dict[str, list[str]] = {
+            item.parent_asin: token_re.findall(item.product.canonical_text.lower())
+            for item in candidates
+        }
+        titles: dict[str, set[str]] = {
+            item.parent_asin: set(token_re.findall(item.product.title.lower()))
+            for item in candidates
+        }
+        unique_terms = list(dict.fromkeys(str(term).lower() for term in query_terms if str(term).strip()))
+        if not unique_terms:
+            return {}, {}
+        document_frequency = {
+            term: sum(term in set(tokens) for tokens in documents.values())
+            for term in unique_terms
+        }
+        average_length = sum(len(tokens) for tokens in documents.values()) / max(len(documents), 1)
+        average_length = max(average_length, 1.0)
+        bm25: dict[str, float] = {}
+        title_coverage: dict[str, float] = {}
+        for parent_asin, tokens in documents.items():
+            counts = Counter(tokens)
+            document_length = max(len(tokens), 1)
+            value = 0.0
+            for term in unique_terms:
+                frequency = counts.get(term, 0)
+                if frequency <= 0:
+                    continue
+                df = document_frequency[term]
+                idf = math.log1p((len(documents) - df + 0.5) / (df + 0.5))
+                denominator = frequency + 1.5 * (
+                    1.0 - 0.75 + 0.75 * document_length / average_length
+                )
+                value += idf * (frequency * 2.5 / max(denominator, 1e-12))
+            bm25[parent_asin] = value
+            title_coverage[parent_asin] = sum(
+                term in titles[parent_asin] for term in unique_terms
+            ) / len(unique_terms)
+        maximum = max(bm25.values(), default=0.0)
+        if maximum > 0.0:
+            bm25 = {key: value / maximum for key, value in bm25.items()}
+        return bm25, title_coverage
 
     def _semantic_rank(
         self,
@@ -792,6 +1000,8 @@ class Agent:
         return response
 
     def _valid_ids(self, values: Sequence[object], limit: int) -> list[str]:
+        if limit <= 0:
+            return []
         result: list[str] = []
         seen: set[str] = set()
         for value in values:

@@ -246,6 +246,102 @@ class CandidateGate:
     gate = evaluate
 
 
+@dataclass(frozen=True)
+class RankEvidence:
+    """Target-free confidence evidence shared with the commit policy."""
+
+    pool_size: int = 0
+    top1_margin: float = 0.0
+    top1_stability: float = 0.0
+    top3_stability: float = 0.0
+    hard_constraint_count: int = 0
+    no_progress_streak: int = 0
+    ranked_ids: tuple[str, ...] = ()
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "pool_size": int(self.pool_size),
+            "top1_margin": round(float(self.top1_margin), 6),
+            "top1_stability": round(float(self.top1_stability), 6),
+            "top3_stability": round(float(self.top3_stability), 6),
+            "hard_constraint_count": int(self.hard_constraint_count),
+            "no_progress_streak": int(self.no_progress_streak),
+            "ranked_ids": list(self.ranked_ids[:10]),
+        }
+
+
+@dataclass(frozen=True)
+class CommitDecision:
+    """How many ranked candidates may cross the recommendation boundary."""
+
+    mode: str
+    recommendation_limit: int
+    reason_code: str
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "mode": self.mode,
+            "recommendation_limit": int(self.recommendation_limit),
+            "reason_code": self.reason_code,
+        }
+
+
+class RecommendationCommitPolicy:
+    """Choose recommendation prefix length independently of retrieval cost."""
+
+    def __init__(
+        self,
+        *,
+        commit_all_threshold: int = 5,
+        partial_threshold: int = 25,
+        partial_limit: int = 1,
+        no_progress_force_commit: int = 2,
+        top1_margin_threshold: float = 0.30,
+        top3_stability_threshold: float = 0.66,
+    ) -> None:
+        self.commit_all_threshold = max(int(commit_all_threshold), 0)
+        self.partial_threshold = max(int(partial_threshold), self.commit_all_threshold)
+        self.partial_limit = 3 if int(partial_limit) >= 3 else 1
+        self.no_progress_force_commit = max(int(no_progress_force_commit), 1)
+        self.top1_margin_threshold = min(max(float(top1_margin_threshold), 0.0), 1.0)
+        self.top3_stability_threshold = min(max(float(top3_stability_threshold), 0.0), 1.0)
+
+    def decide(
+        self,
+        evidence: RankEvidence | None,
+        state: SessionState | None = None,
+        *,
+        turn: int = 1,
+        top_k: int = 10,
+    ) -> CommitDecision:
+        evidence = evidence or RankEvidence()
+        pool_size = max(int(evidence.pool_size), 0)
+        output_cap = max(min(int(top_k), 10), 0)
+        global_exhausted = bool(getattr(state, "global_exhausted", False))
+        no_progress = max(
+            int(evidence.no_progress_streak),
+            int(getattr(state, "no_progress_streak", 0)),
+        )
+        # The final two turns and explicit exhaustion are hard stops: there is
+        # no remaining information budget worth waiting for.
+        if global_exhausted:
+            return CommitDecision("forced", min(pool_size, output_cap), "global_exhausted")
+        if int(turn) >= 9:
+            return CommitDecision("forced", min(pool_size, output_cap), "late_turn")
+        if no_progress >= self.no_progress_force_commit:
+            return CommitDecision("forced", min(pool_size, output_cap), "no_progress")
+        if pool_size <= self.commit_all_threshold:
+            return CommitDecision("full", min(pool_size, output_cap), "small_pool")
+        if pool_size <= self.partial_threshold:
+            margin = min(max(float(evidence.top1_margin), 0.0), 1.0)
+            stability = min(max(float(evidence.top3_stability), 0.0), 1.0)
+            if margin >= self.top1_margin_threshold and evidence.top1_stability >= 1.0:
+                return CommitDecision("partial", min(1, output_cap), "stable_top1")
+            if stability >= self.top3_stability_threshold:
+                return CommitDecision("partial", min(self.partial_limit, output_cap), "stable_top3")
+        return CommitDecision("clarify_only", 0, "broad_or_unstable")
+
+
 def _entropy(values: Iterable[str]) -> float:
     counts = Counter(value for value in values if value)
     total = sum(counts.values())
@@ -263,6 +359,7 @@ class ClarificationPolicy:
     """Select at most one not-yet-exhausted structured question per turn."""
 
     ATTRIBUTE_ORDER = (
+        "other",
         "material",
         "color",
         "size",
@@ -272,7 +369,6 @@ class ClarificationPolicy:
         "feature",
         "use_case",
         "category",
-        "other",
     )
 
     _WORDS: dict[str, tuple[str, ...]] = {
@@ -325,11 +421,10 @@ class ClarificationPolicy:
         candidates: Sequence[object],
         stats: CandidateStats | None,
     ) -> float:
-        if attribute in state.no_preference:
+        exhausted = getattr(state, "attribute_exhausted", set()) | state.no_preference
+        if attribute in exhausted:
             return float("-inf")
-        if attribute in state.asked_set:
-            # Repeating is only useful when no untouched attribute has any
-            # candidate evidence; protocol-aware remains bounded to once.
+        if attribute in state.asked_set and attribute != "other":
             return float("-inf")
         entropy = 0.0
         if stats is not None:
@@ -338,9 +433,8 @@ class ClarificationPolicy:
             entropy = _entropy(self._candidate_values(candidates, attribute))
         evidence = len(self._candidate_values(candidates, attribute))
         base = 0.18 * self.ATTRIBUTE_ORDER.index(attribute)
-        # ``other`` is a protocol fallback, not a preferred first question.
         if attribute == "other":
-            base -= 0.4
+            base -= 1.0
         return entropy + min(evidence, 10) * 0.02 - base
 
     def choose_attribute(
@@ -351,16 +445,65 @@ class ClarificationPolicy:
         *,
         turn: int = 1,
         remaining_turns: int | None = None,
+        reopen_clarification: bool = False,
     ) -> str | None:
         if remaining_turns is None:
             remaining_turns = max(10 - int(turn), 0)
-        if remaining_turns <= 0 or self.max_questions <= 0:
+        global_exhausted = bool(getattr(state, "global_exhausted", False))
+        one_turn_reopen = bool(reopen_clarification and global_exhausted)
+        if (
+            remaining_turns <= 1
+            or self.max_questions <= 0
+            or (global_exhausted and not one_turn_reopen)
+        ):
             return None
+        exhausted = getattr(state, "attribute_exhausted", set()) | state.no_preference
+        if one_turn_reopen:
+            # This is an event-scoped bypass, not a state transition.  Do not
+            # ask the protocol fallback or any slot the user already
+            # exhausted, answered, or constrained in the current epoch.
+            active_attributes = {item.attribute for item in state.active_constraints}
+            available = [
+                attribute
+                for attribute in self.ATTRIBUTE_ORDER
+                if attribute in ALLOWED_ATTRIBUTES
+                and attribute != "other"
+                and attribute not in exhausted
+                and attribute not in state.asked_set
+                and attribute not in active_attributes
+            ]
+            if not available:
+                return None
+            if self.mode == "protocol_aware":
+                with_evidence = [
+                    attribute
+                    for attribute in available
+                    if self._candidate_values(candidates, attribute)
+                    or (stats is not None and stats.attribute_entropy.get(attribute, 0.0) > 0)
+                ]
+                return (with_evidence or available)[0]
+            return max(available, key=lambda attribute: self._utility(attribute, state, candidates, stats))
+        boundary_other_reask = bool(
+            getattr(state, "boundary_seen", False)
+            and "other" in state.no_preference
+            and "other" not in getattr(state, "attribute_exhausted", set())
+        )
+        # A small, already-usable pool does not need another protocol retry;
+        # broad pools do, because ``other`` can disclose multiple constraints
+        # in one answer.  With no candidate evidence (unit-level callers),
+        # retain the explicit boundary re-ask behavior.
+        boundary_reask_has_value = not candidates or len(candidates) > 5
+        if (
+            self.mode == "protocol_aware"
+            and ("other" not in exhausted or (boundary_other_reask and boundary_reask_has_value))
+            and getattr(state, "no_progress_streak", 0) < 2
+        ):
+            return "other"
         available = [
             attribute
             for attribute in self.ATTRIBUTE_ORDER
             if attribute in ALLOWED_ATTRIBUTES
-            and attribute not in state.no_preference
+            and attribute not in exhausted
             and attribute not in state.asked_set
         ]
         if not available:
@@ -385,6 +528,7 @@ class ClarificationPolicy:
         *,
         turn: int = 1,
         remaining_turns: int | None = None,
+        reopen_clarification: bool = False,
     ) -> str | None:
         return self.choose_attribute(
             state,
@@ -392,6 +536,7 @@ class ClarificationPolicy:
             stats,
             turn=turn,
             remaining_turns=remaining_turns,
+            reopen_clarification=reopen_clarification,
         )
 
 
@@ -401,10 +546,13 @@ __all__ = [
     "CATEGORY_RECALL_SMALL_LIMIT",
     "CandidateGate",
     "CandidateGateDecision",
+    "CommitDecision",
     "ClarificationPolicy",
     "IntentRouter",
     "RouteDecision",
     "adaptive_category_budget",
     "category_recall_budget",
     "category_recall_ratio",
+    "RankEvidence",
+    "RecommendationCommitPolicy",
 ]

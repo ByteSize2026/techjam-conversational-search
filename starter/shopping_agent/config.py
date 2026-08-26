@@ -134,6 +134,32 @@ class AgentConfig:
     category_recall_one_hard_ratio: float = 0.35
     category_recall_many_hard_ratio: float = 0.20
 
+    # Full-category structured eligibility and dynamic recommendation commit
+    # are deterministic policy layers.  Their bounds are configurable so
+    # benchmark ablations do not require code edits.
+    structured_pool_enabled: bool = True
+    commit_policy_enabled: bool = True
+    commit_all_threshold: int = 5
+    partial_commit_threshold: int = 25
+    partial_commit_limit: int = 1
+    no_progress_force_commit: int = 2
+    commit_top1_margin_threshold: float = 0.30
+    commit_top3_stability_threshold: float = 0.66
+
+    # Deterministic ranking signal switches/weights.  Keeping these knobs
+    # explicit makes ranking ablations reproducible after dialogue policy is
+    # fixed, without coupling them to the commit decision.
+    ranking_bm25_enabled: bool = True
+    ranking_title_coverage_enabled: bool = True
+    ranking_popularity_enabled: bool = True
+    ranking_rating_enabled: bool = True
+    ranking_profile_enabled: bool = True
+    ranking_bm25_weight: float = 0.36
+    ranking_title_coverage_weight: float = 0.12
+    ranking_popularity_weight: float = 0.03
+    ranking_rating_weight: float = 0.05
+    ranking_profile_weight: float = 0.08
+
     @classmethod
     def from_env(cls) -> "AgentConfig":
         """Build a configuration from explicitly named environment values.
@@ -243,6 +269,75 @@ class AgentConfig:
             category_recall_many_hard_ratio=_bounded_unit_float(
                 env.get("SHOPPING_AGENT_CATEGORY_RECALL_MANY_HARD_RATIO"),
                 0.20,
+            ),
+            structured_pool_enabled=_boolean(
+                env.get("SHOPPING_AGENT_STRUCTURED_POOL")
+                or env.get("SHOPPING_AGENT_STRUCTURED_POOL_ENABLED"),
+                True,
+            ),
+            commit_policy_enabled=_boolean(
+                env.get("SHOPPING_AGENT_COMMIT_POLICY")
+                or env.get("SHOPPING_AGENT_COMMIT_POLICY_ENABLED"),
+                True,
+            ),
+            commit_all_threshold=_positive_int(
+                env.get("SHOPPING_AGENT_COMMIT_ALL_THRESHOLD"), 5
+            ),
+            partial_commit_threshold=_positive_int(
+                env.get("SHOPPING_AGENT_PARTIAL_COMMIT_THRESHOLD"), 25
+            ),
+            partial_commit_limit=min(
+                3,
+                _positive_int(env.get("SHOPPING_AGENT_PARTIAL_COMMIT_LIMIT"), 1),
+            ),
+            no_progress_force_commit=_positive_int(
+                env.get("SHOPPING_AGENT_NO_PROGRESS_FORCE_COMMIT"), 2
+            ),
+            commit_top1_margin_threshold=_bounded_unit_float(
+                env.get("SHOPPING_AGENT_COMMIT_TOP1_MARGIN_THRESHOLD"), 0.30
+            ),
+            commit_top3_stability_threshold=_bounded_unit_float(
+                env.get("SHOPPING_AGENT_COMMIT_TOP3_STABILITY_THRESHOLD"), 0.66
+            ),
+            ranking_bm25_enabled=_boolean(
+                env.get("SHOPPING_AGENT_RANKING_BM25")
+                or env.get("SHOPPING_AGENT_RANKING_BM25_ENABLED"),
+                True,
+            ),
+            ranking_title_coverage_enabled=_boolean(
+                env.get("SHOPPING_AGENT_RANKING_TITLE_COVERAGE")
+                or env.get("SHOPPING_AGENT_RANKING_TITLE_COVERAGE_ENABLED"),
+                True,
+            ),
+            ranking_popularity_enabled=_boolean(
+                env.get("SHOPPING_AGENT_RANKING_POPULARITY")
+                or env.get("SHOPPING_AGENT_RANKING_POPULARITY_ENABLED"),
+                True,
+            ),
+            ranking_rating_enabled=_boolean(
+                env.get("SHOPPING_AGENT_RANKING_RATING")
+                or env.get("SHOPPING_AGENT_RANKING_RATING_ENABLED"),
+                True,
+            ),
+            ranking_profile_enabled=_boolean(
+                env.get("SHOPPING_AGENT_RANKING_PROFILE")
+                or env.get("SHOPPING_AGENT_RANKING_PROFILE_ENABLED"),
+                True,
+            ),
+            ranking_bm25_weight=_nonnegative_float(
+                env.get("SHOPPING_AGENT_RANKING_BM25_WEIGHT"), 0.36
+            ),
+            ranking_title_coverage_weight=_nonnegative_float(
+                env.get("SHOPPING_AGENT_RANKING_TITLE_WEIGHT"), 0.12
+            ),
+            ranking_popularity_weight=_nonnegative_float(
+                env.get("SHOPPING_AGENT_RANKING_POPULARITY_WEIGHT"), 0.03
+            ),
+            ranking_rating_weight=_nonnegative_float(
+                env.get("SHOPPING_AGENT_RANKING_RATING_WEIGHT"), 0.05
+            ),
+            ranking_profile_weight=_nonnegative_float(
+                env.get("SHOPPING_AGENT_RANKING_PROFILE_WEIGHT"), 0.08
             ),
         )
 

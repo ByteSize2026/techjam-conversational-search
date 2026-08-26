@@ -33,6 +33,8 @@ respond(self, session_id: str, user_message: str, turn: int, top_k: int) -> dict
 
 `boundary` 场景中，`evaluator/local_evaluator.py:customer_reply` 可能对已请求属性回答“没有偏好”。这是未知值，不是任意值：保留已知约束，避免反复追问同一属性，并用其他可判别属性、类目或检索证据继续推荐。
 
+全局信息耗尽通常停止继续提问，但存在一个事件级例外：用户同时明确否定当前推荐并要求继续询问具体属性时，只允许当前轮临时绕过提问禁令。不得清除持久的 `global_exhausted`，提交策略仍应按耗尽状态返回可用推荐；临时问题必须排除 `other`、已耗尽/已问属性和当前意图已有约束的属性。下一轮若没有新的明确请求，应恢复全局耗尽行为。
+
 ## 实现反模式
 
 - 不修改 `evaluator/local_evaluator.py` 来适配 Agent；评估器是外部协议的执行者。

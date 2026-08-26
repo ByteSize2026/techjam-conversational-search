@@ -116,10 +116,75 @@ _NO_PREFERENCE_RE = re.compile(
     r"|\b(?:don't|do not|doesn't|does not)\s+(?:have\s+(?:an?\s+)?(?:additional\s+)?preference|care|matter)\s*(?:about|for)?\s*([a-z][a-z_ -]{1,24})?",
     re.I,
 )
+_BOUNDARY_RE = re.compile(
+    r"\b(?:use\s+your\s+judg(?:e|)ment|you\s+decide|your\s+choice|anything\s+is\s+fine|"
+    r"it\s+does(?:n't|\s+not)\s+matter)\b",
+    re.I,
+)
+_GLOBAL_EXHAUSTED_RE = re.compile(
+    r"\b(?:no\s+(?:additional|other|more)\s+preferences?|nothing\s+else|"
+    r"no\s+more\s+(?:preferences?|requirements?)|that(?:'s|\s+is)\s+all|"
+    r"i\s+have\s+no\s+other\s+preferences?)\b",
+    re.I,
+)
+_RECOMMENDATION_REJECTION_RE = re.compile(
+    r"\b(?:those|these|the)\s+(?:options?|recommendations?|choices?|items?)\s+"
+    r"(?:are|seem|look)\s+(?:not\s+(?:quite\s+)?(?:right|suitable|what\s+i\s+want)|"
+    r"wrong|off)\b"
+    r"|\b(?:options?|recommendations?|choices?|items?)\s+(?:aren't|are\s+not|"
+    r"don't\s+work|do\s+not\s+work|weren't|were\s+not)\b"
+    r"|\bnot\s+(?:quite\s+)?(?:right|what\s+i\s+want)\b",
+    re.I,
+)
+_CLARIFICATION_REQUEST_RE = re.compile(
+    r"\b(?:ask|question)\s+me\s+(?:about|on)\b"
+    r"|\b(?:keep|continue)\s+(?:asking|questioning)\b"
+    r"|\b(?:ask|question)\s+(?:a|one|another)\s+(?:specific\s+)?"
+    r"(?:question|attribute|preference|requirement)\b",
+    re.I,
+)
 
 
 def _clean(value: object, limit: int = 180) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip(" \t\r\n-;,.")[:limit].rstrip()
+
+
+_CONSTRAINT_LABELS: dict[str, tuple[str, ...]] = {
+    "category": ("category",),
+    "material": ("material",),
+    "color": ("color", "colour"),
+    "size": ("size", "sizing"),
+    "style": ("style",),
+    "brand": ("brand",),
+    "budget": ("budget", "price"),
+    "feature": ("feature", "detail"),
+    "use_case": ("use case", "use_case", "usecase", "usage"),
+}
+
+
+def normalize_constraint_value(attribute: object, value: object) -> str:
+    """Return a semantic constraint value without protocol field labels.
+
+    Evaluator replies may encode a slot as ``color: black`` or
+    ``material=cotton``.  The prefix identifies the field; it is not a
+    preference token and must not affect either eligibility or ranking.
+    """
+
+    text = _clean(value, 320)
+    attribute_key = re.sub(r"[\s-]+", "_", str(attribute or "").strip().lower())
+    if attribute_key == "colour":
+        attribute_key = "color"
+    labels = _CONSTRAINT_LABELS.get(attribute_key, ())
+    if labels:
+        label_pattern = "|".join(sorted((re.escape(label) for label in labels), key=len, reverse=True))
+        text = re.sub(
+            rf"^\s*(?:{label_pattern})\s*[:=-]\s*",
+            "",
+            text,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+    return _clean(text, 320)
 
 
 def _attribute_from_text(value: str) -> str:
@@ -184,7 +249,7 @@ class Constraint:
     status: str = "active"
 
     def normalized_value(self) -> str:
-        return _clean(self.value).lower()
+        return normalize_constraint_value(self.attribute, self.value).lower()
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -218,6 +283,9 @@ class IntentUpdate:
     mutations: tuple[ConstraintMutation, ...] = ()
     category_anchor: str | None = None
     no_preference: frozenset[str] = frozenset()
+    global_exhausted: bool = False
+    boundary_signal: bool = False
+    reopen_clarification: bool = False
     query_terms: tuple[str, ...] = ()
     confidence: float = 1.0
 
@@ -276,6 +344,18 @@ class SessionState:
     category_anchor: str | None = None
     constraints: list[Constraint] = field(default_factory=list)
     no_preference: set[str] = field(default_factory=set)
+    # Compatibility name is retained; explicit policy state is kept in lockstep.
+    attribute_exhausted: set[str] = field(default_factory=set)
+    global_exhausted: bool = False
+    boundary_seen: bool = False
+    exhaustion_reason: str | None = None
+    ask_counts: dict[str, int] = field(default_factory=dict)
+    previous_structured_pool_size: int | None = None
+    previous_structured_pool_ids: tuple[str, ...] = ()
+    previous_progress_fingerprint: str | None = None
+    no_progress_streak: int = 0
+    previous_ranked_ids: list[str] = field(default_factory=list)
+    softened_constraint_keys: set[tuple[str, str]] = field(default_factory=set)
     asked_attributes: list[str] = field(default_factory=list)
     messages: list[TurnMessage] = field(default_factory=list)
     intent_epoch: int = 0
@@ -317,8 +397,38 @@ class SessionState:
 
     def record_asked(self, attribute: object) -> None:
         normalized = _attribute_name(attribute)
-        if normalized in ALLOWED_ATTRIBUTES and normalized not in self.asked_attributes:
-            self.asked_attributes.append(normalized)
+        if normalized in ALLOWED_ATTRIBUTES:
+            self.ask_counts[normalized] = self.ask_counts.get(normalized, 0) + 1
+            if normalized not in self.asked_attributes:
+                self.asked_attributes.append(normalized)
+
+    def update_progress(
+        self,
+        pool_ids: Sequence[object],
+        ranked_ids: Sequence[object] = (),
+        *,
+        intent_fingerprint: str | None = None,
+    ) -> None:
+        """Record target-free pool/rank progress for clarification safeguards."""
+
+        normalized_pool = tuple(str(value).strip() for value in pool_ids if str(value).strip())
+        current_fingerprint = intent_fingerprint or self.fingerprint()
+        has_previous_progress = (
+            bool(self.previous_structured_pool_ids)
+            or self.previous_progress_fingerprint is not None
+        )
+        pool_changed = normalized_pool != self.previous_structured_pool_ids
+        intent_changed = current_fingerprint != self.previous_progress_fingerprint
+        if not has_previous_progress:
+            self.no_progress_streak = 0
+        elif pool_changed or intent_changed:
+            self.no_progress_streak = 0
+        else:
+            self.no_progress_streak += 1
+        self.previous_structured_pool_ids = normalized_pool
+        self.previous_structured_pool_size = len(normalized_pool)
+        self.previous_progress_fingerprint = current_fingerprint
+        self.previous_ranked_ids = [str(value).strip() for value in ranked_ids if str(value).strip()][:10]
 
     def record_recommendations(self, ids: Sequence[object]) -> None:
         current = self.recommendations_by_epoch.setdefault(self.intent_epoch, [])
@@ -339,6 +449,10 @@ class SessionState:
                 for item in self.active_constraints
             ],
             "no_preference": sorted(self.no_preference),
+            "attribute_exhausted": sorted(self.attribute_exhausted),
+            "global_exhausted": self.global_exhausted,
+            "boundary_seen": self.boundary_seen,
+            "softened_constraint_keys": sorted(self.softened_constraint_keys),
             "query_terms": list(self.query_terms),
             "intent_epoch": self.intent_epoch,
         }
@@ -362,6 +476,7 @@ class SessionState:
             profile_tags = (profile_tags,)
         if not isinstance(profile_tags, (list, tuple, set)):
             profile_tags = ()
+        exhausted = self.no_preference | self.attribute_exhausted
         unanswered = tuple(
             attribute
             for attribute in (
@@ -374,7 +489,7 @@ class SessionState:
                 "feature",
                 "use_case",
             )
-            if attribute not in self.no_preference and not any(
+            if attribute not in exhausted and not any(
                 item.attribute == attribute for item in active
             )
         )
@@ -448,7 +563,18 @@ class StateReducer:
             # old slot evidence, old asked attributes, or old seen penalties.
             state.query_terms.clear()
             state.no_preference.clear()
+            state.attribute_exhausted.clear()
+            state.global_exhausted = False
+            state.boundary_seen = False
+            state.exhaustion_reason = None
+            state.ask_counts.clear()
             state.asked_attributes.clear()
+            state.previous_structured_pool_size = None
+            state.previous_structured_pool_ids = ()
+            state.previous_progress_fingerprint = None
+            state.no_progress_streak = 0
+            state.previous_ranked_ids.clear()
+            state.softened_constraint_keys.clear()
             state.recommendations_by_epoch.setdefault(state.intent_epoch, [])
             state.last_candidate_ids.clear()
 
@@ -460,17 +586,34 @@ class StateReducer:
             if normalized not in ALLOWED_ATTRIBUTES:
                 continue
             state.no_preference.add(normalized)
+            # Boundary is a one-time refusal for the currently asked slot,
+            # not evidence that the slot is permanently exhausted.  In
+            # particular, ``other`` should be available for a second pass to
+            # collect the simulator's high-information constraint reply.
+            if not (normalized == "other" and update.boundary_signal):
+                state.attribute_exhausted.add(normalized)
             for item in state.constraints:
                 if item.active and item.attribute == normalized and item.hardness != "hard":
                     item.active = False
                     item.status = "no_preference"
 
+        if update.global_exhausted:
+            state.global_exhausted = True
+            state.exhaustion_reason = "global_no_more_preferences"
+        if update.boundary_signal:
+            state.boundary_seen = True
+            if state.exhaustion_reason is None:
+                state.exhaustion_reason = "boundary"
         for mutation in update.mutations:
             attribute = _attribute_name(mutation.attribute)
             value = _clean(mutation.value)
             if attribute not in ALLOWED_ATTRIBUTES or not value:
                 continue
             state.no_preference.discard(attribute)
+            state.attribute_exhausted.discard(attribute)
+            state.softened_constraint_keys.discard(
+                (attribute, normalize_constraint_value(attribute, value).lower())
+            )
             if mutation.action in {"replace", "remove"}:
                 for item in state.constraints:
                     if item.active and item.attribute == attribute:
@@ -484,7 +627,7 @@ class StateReducer:
                     for item in state.constraints
                     if item.active
                     and item.attribute == attribute
-                    and item.normalized_value() == value.lower()
+                    and item.normalized_value() == normalize_constraint_value(attribute, value).lower()
                 ),
                 None,
             )
@@ -570,6 +713,25 @@ def parse_intent_update(message: object, *, turn: int = 0) -> IntentUpdate:
         return IntentUpdate()
     override = bool(_OVERRIDE_RE.search(text))
     no_preference = _extract_no_preference(text)
+    global_exhausted = bool(_GLOBAL_EXHAUSTED_RE.search(text))
+    if re.search(
+        r"\b(?:don't|do not)\s+have\s+an?\s+additional\s+preference\s+(?:for|on|about)\s+other\b",
+        text,
+        re.I,
+    ):
+        global_exhausted = True
+    if global_exhausted and re.search(
+        r"\b(?:no|without)\s+(?:an?\s+)?(?:additional\s+)?preference\s+(?:for|on|about)\s+"
+        r"(?:material|color|colour|size|style|brand|budget|feature|use|use_case|category)\b",
+        text,
+        re.I,
+    ):
+        global_exhausted = False
+    boundary_signal = bool(_BOUNDARY_RE.search(text))
+    reopen_clarification = bool(
+        _RECOMMENDATION_REJECTION_RE.search(text)
+        and _CLARIFICATION_REQUEST_RE.search(text)
+    )
     mutations: list[ConstraintMutation] = []
     marker_value = _extract_value_after_marker(text)
 
@@ -639,13 +801,16 @@ def parse_intent_update(message: object, *, turn: int = 0) -> IntentUpdate:
 
     # If the message is explicitly boundary/no-preference, do not also treat
     # its polite text as a positive feature constraint.
-    if no_preference:
+    if no_preference or reopen_clarification:
         query_terms = tuple()
     return IntentUpdate(
         global_override=override,
         mutations=tuple(mutations),
         category_anchor=category,
         no_preference=frozenset(no_preference),
+        global_exhausted=global_exhausted,
+        boundary_signal=boundary_signal,
+        reopen_clarification=reopen_clarification,
         query_terms=query_terms,
         confidence=0.9 if mutations or category else 0.55,
     )
@@ -663,5 +828,6 @@ __all__ = [
     "SessionStore",
     "StateReducer",
     "TurnMessage",
+    "normalize_constraint_value",
     "parse_intent_update",
 ]
