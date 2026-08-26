@@ -43,9 +43,9 @@ Gate: retain the adaptive default only with measurable recall/score improvement 
 
 ## Phase 5 — Review and Finish
 
-- [ ] Run an independent correctness review for category resolution, quota preservation, evaluator isolation, and overfitting.
-- [ ] Run full unittest, evaluator, and `git diff --check`.
-- [ ] Update relevant Trellis specs only if a reusable category-retrieval convention was learned.
+- [x] Run an independent correctness review for category resolution, quota preservation, evaluator isolation, and overfitting.
+- [x] Run full unittest, evaluator, and `git diff --check`.
+- [x] Update relevant Trellis specs only if a reusable category-retrieval convention was learned. No spec update was needed; the task-local design/report capture the experiment-specific policy.
 - [ ] Commit only task-owned files, then finish and archive the Trellis task.
 
 ## Validation Commands

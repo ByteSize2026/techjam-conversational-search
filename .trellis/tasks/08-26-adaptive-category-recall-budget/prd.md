@@ -41,15 +41,15 @@ Replace the fixed retrieval cutoff with a category-size-aware recall budget so p
 
 ## Acceptance Criteria
 
-- [ ] Categories with 500 or fewer products receive a complete category-route budget.
-- [ ] Categories above 500 products use the specified 50%/35%/20% ratio and 100–400 clamp deterministically.
-- [ ] Exact category-route candidates survive route union up to their allocated quota and remain catalog-valid and unique.
-- [ ] CandidateGate over-generality can skip semantic ranking without truncating the cheap category/feature candidate pool.
-- [ ] Unit tests cover a small category, a large category at all three specificity levels, an unknown category, deterministic ties, quota preservation, and the semantic Top-30 boundary.
-- [ ] An offline report compares fixed-budget and adaptive-budget Retrieval Recall@30/100/200, Feature Recall@30, public HitRate@10, MRR, MTTC, TechnicalScore, and latency.
-- [ ] `public_0028` is reported as a diagnostic case, but no sample ID or ground-truth ASIN appears in production Agent logic.
-- [ ] Full unittest passes, `git diff --check` passes, and the frozen evaluator is unchanged.
-- [ ] The adaptive strategy is retained only if it improves recall or official metrics without unacceptable scenario-level or latency regression; otherwise the fixed-budget path remains available for rollback.
+- [x] Categories with 500 or fewer products receive a complete category-route budget.
+- [x] Categories above 500 products use the specified 50%/35%/20% ratio and 100–400 clamp deterministically.
+- [x] Exact category-route candidates survive route union up to their allocated quota and remain catalog-valid and unique.
+- [x] CandidateGate over-generality can skip semantic ranking without truncating the cheap category/feature candidate pool.
+- [x] Unit tests cover a small category, a large category at all three specificity levels, an unknown category, deterministic ties, quota preservation, and the semantic Top-30 boundary.
+- [x] An offline report compares fixed-budget and adaptive-budget Retrieval Recall@30/100/200, Feature Recall@30, public HitRate@10, MRR, MTTC, TechnicalScore, and latency.
+- [x] `public_0028` is reported as a diagnostic case, but no sample ID or ground-truth ASIN appears in production Agent logic.
+- [x] Full unittest passes, `git diff --check` passes, and the frozen evaluator is unchanged.
+- [x] The adaptive strategy is retained only if it improves recall or official metrics without unacceptable scenario-level or latency regression; otherwise the fixed-budget path remains available for rollback.
 
 ## Notes
 

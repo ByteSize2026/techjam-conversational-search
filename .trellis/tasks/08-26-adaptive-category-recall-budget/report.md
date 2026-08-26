@@ -31,12 +31,19 @@ The implementation uses no LLM, embedding model, API, or network backend. Both f
 
 | Metric | Fixed | Adaptive | Delta |
 | --- | ---: | ---: | ---: |
-| TechnicalScore | 0.710956 | 0.747367 | +0.036411 |
-| HitRate@10 | 0.855 | 0.905 | +0.050 |
-| MRR | 0.557188 | 0.543222 | -0.013966 |
-| MTTC | 5.185 | 4.405 | -0.780 |
+| TechnicalScore | 0.710956 | 0.743854 | +0.032898 |
+| HitRate@10 | 0.855 | 0.900 | +0.045 |
+| MRR | 0.557188 | 0.545181 | -0.012007 |
+| MTTC | 5.185 | 4.485 | -0.700 |
 
-The adaptive pipeline finds 10 additional sessions and converts earlier on average. MRR falls slightly because the broader candidate pipeline adds lower-ranked hits and perturbs some existing Top-10 orders. All scenario-level TechnicalScores improve; reranking is the next stage responsible for recovering MRR.
+The adaptive pipeline produces nine additional net Top-10 hits and converts 0.7 turns earlier on average. MRR falls slightly because the broader candidate pipeline perturbs some existing Top-10 orders. All scenario-level TechnicalScores improve; reranking is the next stage responsible for recovering MRR.
+
+| Scenario TechnicalScore | Fixed | Adaptive | Delta |
+| --- | ---: | ---: | ---: |
+| Boundary | 0.495500 | 0.594333 | +0.098833 |
+| Browsing | 0.758411 | 0.797862 | +0.039451 |
+| Buying | 0.754122 | 0.780717 | +0.026595 |
+| Intent override | 0.541123 | 0.551373 | +0.010250 |
 
 ## Recall Metrics
 
@@ -45,9 +52,9 @@ The adaptive pipeline finds 10 additional sessions and converts earlier on avera
 | Retrieval Recall@30 | 0.770 | 0.990 | +0.220 |
 | Retrieval Recall@100 | 0.905 | 1.000 | +0.095 |
 | Retrieval Recall@200 | 0.930 | 1.000 | +0.070 |
-| Feature Recall@30 | 0.880 | 0.965 | +0.085 |
+| Feature Recall@30 | 0.880 | 0.955 | +0.075 |
 
-Feature Recall@30 gains 17 sessions with no losses. Retrieval Recall@100 and Recall@200 reach 1.0 with no losses; Recall@30 gains 45 sessions and loses one.
+Feature Recall@30 gains 15 sessions with no losses. Retrieval Recall@100 and Recall@200 reach 1.0; Recall@30 gains 45 sessions and loses one.
 
 ## `public_0028` Diagnostic
 
@@ -68,20 +75,24 @@ It still does not reach Top-10 without reranking. This makes it a valid reranker
 
 ## Runtime and Artifacts
 
-- Fixed p50/p95 per turn: 137/258 ms.
-- Adaptive p50/p95 per turn: 219/397 ms.
+- Fixed p50/p95/max per turn: 132/258/516 ms.
+- Adaptive p50/p95/max per turn: 233/416/662 ms.
+- Maximum cheap candidate pool: fixed 200, adaptive 500, below the absolute cap of 600.
+- Maximum semantic/model input: 30 in both modes.
 - Runtime does not enter TechnicalScore; it is retained as a feasibility guard only.
 - Full target-free trace and post-hoc metrics:
-  `/Volumes/PeeB/ai-models/techjam/benchmarks/results/adaptive-category-recall-full.json`
+  `/Volumes/PeeB/ai-models/techjam/benchmarks/results/adaptive-category-recall-feature-only-frozen.json`
 - Artifact size: approximately 27 MB.
+- SHA-256: `724ae681c22347e6ba15577f16e81cfebab2654206d6409e6d6e01847c042cd7`.
 
 ## Validation
 
 ```text
-44 unittest tests passed
+45 unittest tests passed
 git diff --check passed
 reported_token_usage = 0
 category target coverage = 200/200
+independent review = approved for freeze
 ```
 
 ## Handoff to Qwen Benchmark
