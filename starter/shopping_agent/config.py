@@ -70,14 +70,14 @@ def _boolean(value: object, default: bool) -> bool:
 
 
 def _reranker_device_from_env(env: Mapping[str, str]) -> str:
-    """Read the supported MPS/CPU device setting with a safe fallback."""
+    """Read the supported MPS/CUDA/CPU device setting with a safe fallback."""
 
     value = (
         _optional_text(env.get("SHOPPING_AGENT_QWEN_RERANKER_DEVICE"))
         or _optional_text(env.get("SHOPPING_AGENT_RERANKER_DEVICE"))
         or "mps"
     ).lower()
-    return value if value in {"mps", "cpu"} else "cpu"
+    return value if value in {"mps", "cuda", "cpu"} else "cpu"
 
 
 @dataclass(frozen=True)

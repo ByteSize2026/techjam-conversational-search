@@ -10,8 +10,10 @@ It provides three small pieces of experiment infrastructure:
 The ``baseline`` CLI subcommand can run the repository's deterministic Agent
 with an explicitly supplied catalog and public set.  The ``compare`` command
 only reads local JSON files, so it is also useful before a reranker exists.
-All default output is placed under the external-disk benchmark directory.
-No function in this file performs network access or model installation.
+All model loading is explicit and offline; no function in this file performs
+network access or model installation.  Callers choose where artifacts and
+cache variables live for their environment (for example, an external volume
+or Colab's ``/content``).
 """
 
 from __future__ import annotations
@@ -31,12 +33,14 @@ import time
 from typing import Any
 
 
-# Keep the default artifact location explicit and outside the repository.  A
-# caller may provide another artifact root explicitly, but an omitted root
-# must never silently become ~/.cache, /tmp, or the checkout.
-EXTERNAL_ROOT = Path("/Volumes/PeeB/ai-models/techjam")
-DEFAULT_ARTIFACT_ROOT = EXTERNAL_ROOT / "benchmarks"
+# A portable relative default keeps storage policy out of the benchmark
+# library.  Callers may explicitly select any normal local artifact path.
+DEFAULT_ARTIFACT_ROOT = Path("benchmark-artifacts")
 DEFAULT_ASSET_LIMIT_BYTES = 8 * 1024**3
+FROZEN_TRACE_SCHEMA_VERSION = "adaptive-category-recall-diagnostic-v1"
+FROZEN_TRACE_SHA256 = "724ae681c22347e6ba15577f16e81cfebab2654206d6409e6d6e01847c042cd7"
+FROZEN_TRACE_TOP_K = 30
+MAX_FROZEN_TRACE_TURN = 10
 DEFAULT_SPLIT_RATIOS = {
     "dev": 0.60,
     "validation": 0.20,
@@ -77,6 +81,174 @@ def _read_jsonl(path: str | Path) -> list[dict[str, object]]:
                 raise ValueError(f"JSONL row at {path}:{line_number} is not an object")
             rows.append(value)
     return rows
+
+
+class FrozenTraceMismatch(RuntimeError):
+    """Raised when a live deterministic turn diverges from frozen inputs."""
+
+
+def _sha256_file(path: str | Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _strict_trace_ids(value: object, *, label: str) -> list[str]:
+    if not isinstance(value, list) or not value:
+        raise ValueError(f"frozen trace {label} must be a non-empty list")
+    identifiers: list[str] = []
+    seen: set[str] = set()
+    for index, item in enumerate(value):
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError(f"frozen trace {label}[{index}] must be a non-empty string")
+        identifier = item.strip()
+        if identifier in seen:
+            raise ValueError(f"frozen trace {label} contains duplicate ID {identifier}")
+        seen.add(identifier)
+        identifiers.append(identifier)
+    return identifiers
+
+
+def load_frozen_adaptive_trace(
+    path: str | Path,
+    *,
+    catalog_path: str | Path | None = None,
+    public_set_path: str | Path | None = None,
+    public_sample_ids: Sequence[str],
+    expected_sha256: str | None = FROZEN_TRACE_SHA256,
+) -> dict[str, object]:
+    """Load and validate the target-free adaptive trace used by reranking.
+
+    The returned ``traces`` list is aligned with ``sample_ids`` and contains
+    only deterministic candidate IDs.  Ground-truth fields are neither read
+    nor copied.  ``catalog_path`` and ``public_set_path`` are retained as
+    compatibility arguments for callers of the earlier API, but are
+    intentionally not compared: a trace may be replayed on another machine
+    where the source files have different absolute paths.  The trace digest,
+    schema, sample IDs, turns, and candidate whitelist are the integrity
+    checks here.  ``expected_sha256`` is injectable only for small unit
+    fixtures; production callers use the pinned frozen-artifact digest.
+    """
+
+    # Keep the compatibility parameters explicit without treating source
+    # paths as an integrity boundary.  A future artifact may include data
+    # hashes, but a path alone does not establish that the data is unchanged.
+    del catalog_path, public_set_path
+
+    source = Path(path).expanduser().resolve(strict=False)
+    if not source.is_file():
+        raise ValueError(f"frozen trace does not exist or is not a file: {source}")
+    actual_sha256 = _sha256_file(source)
+    if expected_sha256 is not None:
+        expected = str(expected_sha256).strip().lower()
+        if actual_sha256 != expected:
+            raise ValueError(
+                "frozen trace SHA256 mismatch: "
+                f"expected {expected}, got {actual_sha256} ({source})"
+            )
+    try:
+        value = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"could not read frozen trace JSON: {source}") from exc
+    if not isinstance(value, dict):
+        raise ValueError("frozen trace must be a JSON object")
+    if value.get("schema_version") != FROZEN_TRACE_SCHEMA_VERSION:
+        raise ValueError(
+            "unsupported frozen trace schema: "
+            f"{value.get('schema_version')!r}"
+        )
+
+    guard = value.get("model_guard")
+    if not isinstance(guard, Mapping):
+        raise ValueError("frozen trace is missing model_guard")
+    if guard.get("mode") != "feature_only" or guard.get("network") != "disabled":
+        raise ValueError("frozen trace is not a feature-only offline artifact")
+    if guard.get("reported_token_usage") != 0:
+        raise ValueError("frozen trace reported non-zero token usage")
+
+    sample_ids = _strict_trace_ids(value.get("sample_ids"), label="sample_ids")
+    provided_ids = list(public_sample_ids)
+    if provided_ids != sample_ids:
+        raise ValueError(
+            "frozen trace sample ID/order mismatch with public set: "
+            f"{len(provided_ids)} live IDs vs {len(sample_ids)} frozen IDs"
+        )
+
+    adaptive = value.get("adaptive")
+    if not isinstance(adaptive, Mapping):
+        raise ValueError("frozen trace is missing adaptive mode")
+    config = adaptive.get("config")
+    if not isinstance(config, Mapping) or config.get("adaptive_category_recall_enabled") is not True:
+        raise ValueError("frozen trace adaptive mode is not enabled")
+    adaptive_ids = _strict_trace_ids(adaptive.get("sample_ids"), label="adaptive.sample_ids")
+    if adaptive_ids != sample_ids:
+        raise ValueError("frozen trace adaptive sample IDs do not match root sample IDs")
+    raw_count = adaptive.get("sample_count")
+    if isinstance(raw_count, bool) or not isinstance(raw_count, int) or raw_count != len(sample_ids):
+        raise ValueError("frozen trace adaptive sample_count does not match sample IDs")
+
+    raw_traces = adaptive.get("target_free_trace")
+    if not isinstance(raw_traces, list) or len(raw_traces) != len(sample_ids):
+        raise ValueError("frozen trace adaptive target_free_trace/sample count mismatch")
+
+    traces: list[dict[str, object]] = []
+    for sample_index, raw_trace in enumerate(raw_traces):
+        if not isinstance(raw_trace, Mapping):
+            raise ValueError(f"frozen trace entry {sample_index} is not an object")
+        session_id = raw_trace.get("session_id")
+        if not isinstance(session_id, str) or not session_id.strip():
+            raise ValueError(f"frozen trace entry {sample_index} has no session_id")
+        raw_turns = raw_trace.get("turns")
+        if not isinstance(raw_turns, list) or not raw_turns:
+            raise ValueError(f"frozen trace entry {sample_index} has no turns")
+        turns: dict[int, dict[str, object]] = {}
+        previous_turn = 0
+        for turn_index, raw_turn in enumerate(raw_turns):
+            if not isinstance(raw_turn, Mapping):
+                raise ValueError(
+                    f"frozen trace {sample_ids[sample_index]} turn {turn_index} is not an object"
+                )
+            turn = raw_turn.get("turn")
+            if isinstance(turn, bool) or not isinstance(turn, int):
+                raise ValueError(f"frozen trace {sample_ids[sample_index]} has a non-integer turn")
+            if turn < 1 or turn > MAX_FROZEN_TRACE_TURN or turn <= previous_turn:
+                raise ValueError(
+                    f"frozen trace {sample_ids[sample_index]} has invalid turn sequence at {turn}"
+                )
+            previous_turn = turn
+            if turn in turns:
+                raise ValueError(f"frozen trace {sample_ids[sample_index]} repeats turn {turn}")
+            retrieval_ids = _strict_trace_ids(
+                raw_turn.get("retrieval_candidate_ids"),
+                label=f"{sample_ids[sample_index]} turn {turn} retrieval_candidate_ids",
+            )
+            feature_ids = _strict_trace_ids(
+                raw_turn.get("feature_ranked_ids"),
+                label=f"{sample_ids[sample_index]} turn {turn} feature_ranked_ids",
+            )
+            if not set(feature_ids).issubset(retrieval_ids):
+                raise ValueError(
+                    f"frozen trace {sample_ids[sample_index]} turn {turn} violates candidate whitelist"
+                )
+            turns[turn] = {
+                "turn": turn,
+                "retrieval_candidate_ids": retrieval_ids,
+                "feature_ranked_ids": feature_ids,
+            }
+        traces.append({"session_id": session_id.strip(), "turns": turns})
+
+    return {
+        "path": str(source),
+        "sha256": actual_sha256,
+        "schema_version": FROZEN_TRACE_SCHEMA_VERSION,
+        "sample_ids": sample_ids,
+        "traces": traces,
+    }
 
 
 def _sample_metadata(sample: Mapping[str, object]) -> dict[str, str]:
@@ -449,33 +621,85 @@ def directory_size_bytes(path: str | Path) -> int:
     return total
 
 
-def validate_external_path(
+def _validate_existing_local_path(
     path: str | Path,
     *,
-    root: str | Path = EXTERNAL_ROOT,
+    label: str,
+    directory: bool,
+    require_absolute: bool,
 ) -> Path:
-    """Validate a model/cache/asset path stays under the external root."""
+    """Validate an explicitly selected local file or directory.
 
-    candidate = Path(path).expanduser().resolve()
-    external_root = Path(root).expanduser().resolve()
-    try:
-        candidate.relative_to(external_root)
-    except ValueError as exc:
-        raise ValueError(
-            f"path must stay under external root {external_root}: {candidate}"
-        ) from exc
+    This is deliberately a local-shape check, not a storage-policy boundary:
+    callers may use ``/content`` in Colab, an external volume, or any other
+    absolute path they control.  Model paths are required to be absolute so a
+    run cannot accidentally resolve a different checkpoint after ``cwd``
+    changes.  Trace and optional asset paths may opt into relative paths.
+    """
+
+    raw = Path(path).expanduser()
+    if require_absolute and not raw.is_absolute():
+        raise ValueError(f"{label} path must be an absolute path: {path}")
+    candidate = raw.resolve(strict=False)
+    if not candidate.exists():
+        raise ValueError(f"{label} path does not exist: {candidate}")
+    if directory and not candidate.is_dir():
+        raise ValueError(f"{label} path must be a directory: {candidate}")
+    if not directory and not candidate.is_file():
+        raise ValueError(f"{label} path must be a file: {candidate}")
     return candidate
+
+
+def validate_model_path(path: str | Path) -> Path:
+    """Validate a user-supplied model directory without imposing a root."""
+
+    return _validate_existing_local_path(
+        path,
+        label="model",
+        directory=True,
+        require_absolute=True,
+    )
+
+
+def validate_asset_directory(path: str | Path) -> Path:
+    """Validate an optional existing asset directory at any local path."""
+
+    return _validate_existing_local_path(
+        path,
+        label="asset",
+        directory=True,
+        require_absolute=False,
+    )
+
+
+def validate_frozen_trace_path(path: str | Path) -> Path:
+    """Validate an optional existing frozen trace file at any local path."""
+
+    return _validate_existing_local_path(
+        path,
+        label="frozen trace",
+        directory=False,
+        require_absolute=False,
+    )
+
+
+def validate_external_path(path: str | Path) -> Path:
+    """Backward-compatible alias for an existing local asset directory.
+
+    The old name referred to an external-root restriction.  It now performs
+    only the local directory check and intentionally accepts paths on any
+    volume.
+    New callers should use :func:`validate_asset_directory`.
+    """
+
+    return validate_asset_directory(path)
 
 
 def resolve_artifact_root(value: str | Path | None) -> Path:
-    """Resolve the default external artifact root or an explicitly supplied one."""
+    """Resolve an explicit artifact directory without a storage-root policy."""
 
-    if value is None:
-        return DEFAULT_ARTIFACT_ROOT
-    candidate = Path(value).expanduser().resolve()
-    if candidate in {Path("/"), Path.home().resolve()}:
-        raise ValueError("artifact root is too broad; choose a task directory")
-    return candidate
+    candidate = DEFAULT_ARTIFACT_ROOT if value is None else Path(value).expanduser()
+    return candidate.resolve(strict=False)
 
 
 def measure_callable(
@@ -804,7 +1028,7 @@ def compare_result_files(
     manifest = load_manifest(manifest_path) if manifest_path is not None else None
     asset_bytes: int | None = None
     if asset_dir is not None:
-        asset_path = validate_external_path(asset_dir)
+        asset_path = validate_asset_directory(asset_dir)
         asset_bytes = directory_size_bytes(asset_path)
 
     comparisons: list[dict[str, object]] = []
@@ -860,17 +1084,148 @@ class _InstrumentedAgent:
                 self.diagnostics.append(dict(diagnostics))
 
 
+class _FrozenTraceAgent:
+    """Assert live deterministic feature order against a frozen trace."""
+
+    def __init__(
+        self,
+        agent: object,
+        sample_ids: Sequence[str],
+        traces: Sequence[Mapping[str, object]],
+    ) -> None:
+        if len(sample_ids) != len(traces):
+            raise ValueError("frozen trace sample and trace counts do not match")
+        original_feature_rank = getattr(agent, "_feature_rank", None)
+        if not callable(original_feature_rank):
+            raise TypeError("frozen trace wrapper requires an Agent with _feature_rank()")
+        self.agent = agent
+        self.sample_ids = list(sample_ids)
+        self.traces = list(traces)
+        self._original_feature_rank = original_feature_rank
+        self._next_sample_index = 0
+        self._current_sample_id: str | None = None
+        self._current_trace: Mapping[str, object] | None = None
+        self._seen_turns: set[int] = set()
+        self.errors: list[str] = []
+        # Agent._respond_impl resolves this instance attribute dynamically;
+        # assigning a bound method lets us keep the public Agent contract and
+        # avoid changing evaluator behavior.
+        setattr(agent, "_feature_rank", self._feature_rank)
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self.agent, name)
+
+    @staticmethod
+    def _candidate_id(candidate: object) -> str:
+        value = getattr(candidate, "parent_asin", None)
+        return "" if value is None else str(value).strip()
+
+    def _record_error(self, message: str) -> FrozenTraceMismatch:
+        if not self.errors:
+            self.errors.append(message)
+        return FrozenTraceMismatch(self.errors[0])
+
+    def reset(self, session_id: str, user_profile: dict) -> object:
+        if self._next_sample_index >= len(self.sample_ids):
+            error = self._record_error(
+                "frozen trace received more resets than selected samples"
+            )
+            raise error
+        self._current_sample_id = self.sample_ids[self._next_sample_index]
+        self._current_trace = self.traces[self._next_sample_index]
+        self._next_sample_index += 1
+        self._seen_turns = set()
+        return self.agent.reset(session_id, user_profile)  # type: ignore[attr-defined]
+
+    def respond(self, session_id: str, user_message: str, turn: int, top_k: int) -> object:
+        before = len(self._seen_turns)
+        response = self.agent.respond(session_id, user_message, turn, top_k)  # type: ignore[attr-defined]
+        if not self.errors and len(self._seen_turns) == before:
+            sample_id = self._current_sample_id or "<unknown>"
+            error = self._record_error(
+                f"frozen trace {sample_id} turn {turn} did not produce a feature ranking"
+            )
+            raise error
+        return response
+
+    def _feature_rank(
+        self,
+        state: object,
+        candidates: Sequence[object],
+        context: object,
+        *,
+        limit: int | None = None,
+    ) -> list[object]:
+        ranked = list(self._original_feature_rank(state, candidates, context, limit=limit))
+        sample_id = self._current_sample_id or "<unknown>"
+        try:
+            turn = int(getattr(context, "turn"))
+        except (TypeError, ValueError):
+            error = self._record_error(f"frozen trace {sample_id} received an invalid live turn")
+            raise error
+        if self._current_trace is None:
+            error = self._record_error(f"frozen trace has no active sample for turn {turn}")
+            raise error
+        raw_turns = self._current_trace.get("turns")
+        expected_turn = raw_turns.get(turn) if isinstance(raw_turns, Mapping) else None
+        if not isinstance(expected_turn, Mapping):
+            error = self._record_error(
+                f"frozen trace {sample_id} has no expected turn {turn}"
+            )
+            raise error
+        expected_ids = expected_turn.get("feature_ranked_ids")
+        if not isinstance(expected_ids, list):
+            error = self._record_error(
+                f"frozen trace {sample_id} turn {turn} has no feature ranking"
+            )
+            raise error
+        expected_top = [str(value).strip() for value in expected_ids[:FROZEN_TRACE_TOP_K]]
+        actual_ids = [self._candidate_id(item) for item in ranked]
+        actual_top = actual_ids[:FROZEN_TRACE_TOP_K]
+        if actual_top != expected_top:
+            error = self._record_error(
+                f"frozen feature Top-{FROZEN_TRACE_TOP_K} mismatch for {sample_id} turn {turn}: "
+                f"expected {expected_top!r}, got {actual_top!r}"
+            )
+            raise error
+
+        # This prefix is equal to the live result after the assertion.  Build
+        # it explicitly so the semantic ranker receives exactly the frozen
+        # order and never a model-generated or unknown ID.
+        by_id = {self._candidate_id(item): item for item in ranked}
+        frozen_prefix: list[object] = []
+        for identifier in expected_top:
+            item = by_id.get(identifier)
+            if item is None:
+                error = self._record_error(
+                    f"frozen feature ID {identifier} is absent from live candidates "
+                    f"for {sample_id} turn {turn}"
+                )
+                raise error
+            frozen_prefix.append(item)
+        frozen_set = set(expected_top)
+        tail = [item for item in ranked if self._candidate_id(item) not in frozen_set]
+        self._seen_turns.add(turn)
+        return frozen_prefix + tail
+
+    def assert_complete(self) -> None:
+        if self.errors:
+            raise FrozenTraceMismatch(self.errors[0])
+        if self._next_sample_index != len(self.sample_ids):
+            raise FrozenTraceMismatch(
+                "frozen trace reset count mismatch: "
+                f"expected {len(self.sample_ids)}, got {self._next_sample_index}"
+            )
+
+
 @contextmanager
 def _offline_environment() -> Iterable[None]:
-    """Force local model loading and redirect any runtime caches to PeeB."""
+    """Force offline model loading without changing caller-selected caches."""
 
     values = {
         "TRANSFORMERS_OFFLINE": "1",
         "HF_HUB_OFFLINE": "1",
         "HF_DATASETS_OFFLINE": "1",
-        "HF_HOME": str(EXTERNAL_ROOT / "models" / "huggingface"),
-        "TRANSFORMERS_CACHE": str(EXTERNAL_ROOT / "models" / "huggingface"),
-        "HUGGINGFACE_HUB_CACHE": str(EXTERNAL_ROOT / "models" / "huggingface"),
     }
     previous = {key: os.environ.get(key) for key in values}
     os.environ.update(values)
@@ -931,9 +1286,9 @@ def _validate_rerank_options(
     timeout_seconds: float,
     fusion_weight: float,
 ) -> Path:
-    checked_model_path = validate_external_path(model_path)
-    if str(device).lower() not in {"mps", "cpu"}:
-        raise ValueError("device must be mps or cpu")
+    checked_model_path = validate_model_path(model_path)
+    if str(device).lower() not in {"mps", "cuda", "cpu"}:
+        raise ValueError("device must be mps, cuda, or cpu")
     if int(batch_size) <= 0:
         raise ValueError("batch_size must be positive")
     if int(candidate_limit) <= 0 or int(candidate_limit) > 30:
@@ -1010,6 +1365,7 @@ def run_reranked(
     timeout_seconds: float = 15.0,
     fusion_weight: float = 1.0,
     manifest_path: str | Path | None = None,
+    frozen_trace_path: str | Path | None = None,
     split: str = "validation",
     sample_limit: int | None = None,
     semantic_ranker: object | None = None,
@@ -1019,8 +1375,11 @@ def run_reranked(
     ``semantic_ranker`` is an explicit dependency-injection hook used only by
     tests and local adapter validation.  Production callers omit it, causing
     ``Agent`` to construct its Qwen adapter from the supplied ``AgentConfig``.
-    The model path is always validated under PeeB and the whole evaluation is
-    wrapped in offline environment variables.
+    The model path must be an explicit absolute existing local directory and
+    the whole evaluation is wrapped in offline environment variables.  When
+    ``frozen_trace_path`` is
+    supplied, the live deterministic feature Top-30 is checked against the
+    pinned adaptive trace before any Qwen scoring is allowed.
     """
 
     checked_model_path = _validate_rerank_options(
@@ -1039,12 +1398,37 @@ def run_reranked(
     from starter.shopping_agent.config import AgentConfig
 
     manifest = load_manifest(manifest_path) if manifest_path is not None else None
+    all_samples = load_jsonl(public_set_path)
+    all_sample_ids = [str(sample.get("sample_id", "")) for sample in all_samples]
     samples, sample_ids = _select_samples(
-        load_jsonl(public_set_path),
+        all_samples,
         manifest=manifest,
         split=split,
         sample_limit=sample_limit,
     )
+    frozen_bundle: dict[str, object] | None = None
+    checked_frozen_trace: Path | None = None
+    if frozen_trace_path is not None:
+        checked_frozen_trace = validate_frozen_trace_path(frozen_trace_path)
+        frozen_bundle = load_frozen_adaptive_trace(
+            checked_frozen_trace,
+            catalog_path=catalog_path,
+            public_set_path=public_set_path,
+            public_sample_ids=all_sample_ids,
+        )
+        frozen_ids = frozen_bundle.get("sample_ids")
+        frozen_traces = frozen_bundle.get("traces")
+        if not isinstance(frozen_ids, list) or not isinstance(frozen_traces, list):
+            raise ValueError("validated frozen trace has an invalid internal shape")
+        trace_by_id = dict(zip(frozen_ids, frozen_traces))
+        try:
+            selected_traces = [trace_by_id[sample_id] for sample_id in sample_ids]
+        except KeyError as exc:
+            raise ValueError(f"frozen trace is missing selected sample {exc.args[0]}") from exc
+        if not all(isinstance(trace, Mapping) for trace in selected_traces):
+            raise ValueError("frozen trace selected entries are not objects")
+    else:
+        selected_traces = []
     asset_size_bytes, asset_path_exists = _asset_size_if_present(checked_model_path)
     config = AgentConfig(
         qwen_reranker_model_path=str(checked_model_path),
@@ -1059,15 +1443,23 @@ def run_reranked(
     with _offline_environment():
         init_started = time.perf_counter()
         if semantic_ranker is None:
-            agent = Agent(catalog_path, config=config)
+            base_agent = Agent(catalog_path, config=config)
         else:
-            agent = Agent(catalog_path, config=config, semantic_ranker=semantic_ranker)
+            base_agent = Agent(catalog_path, config=config, semantic_ranker=semantic_ranker)
+        frozen_agent: _FrozenTraceAgent | None = None
+        if frozen_bundle is not None:
+            frozen_agent = _FrozenTraceAgent(base_agent, sample_ids, selected_traces)
+            agent: object = frozen_agent
+        else:
+            agent = base_agent
         initialization_ms = (time.perf_counter() - init_started) * 1000.0
         instrumented = _InstrumentedAgent(agent)
         run_started = time.perf_counter()
         catalog_ids, categories, products = catalog_index(catalog_path)
         result = evaluate(instrumented, samples, catalog_ids, categories, products)
         wall_time_ms = (time.perf_counter() - run_started) * 1000.0
+        if frozen_agent is not None:
+            frozen_agent.assert_complete()
 
     evaluator_metric_names = (
         "sample_count",
@@ -1092,6 +1484,13 @@ def run_reranked(
         "split": split,
         "sample_limit": sample_limit,
         "sample_ids": list(sample_ids),
+        "frozen_trace_path": (
+            None if checked_frozen_trace is None else str(checked_frozen_trace)
+        ),
+        "frozen_trace_sha256": (
+            None if frozen_bundle is None else frozen_bundle.get("sha256")
+        ),
+        "frozen_trace_checked": frozen_bundle is not None,
         "evaluator_metrics": {name: result.get(name) for name in evaluator_metric_names},
         "resource": _rerank_resource_report(
             instrumented,
@@ -1139,7 +1538,7 @@ def run_deterministic_baseline(
     )
 
     if asset_dir is not None:
-        asset_path = validate_external_path(asset_dir)
+        asset_path = validate_asset_directory(asset_dir)
         asset_bytes = directory_size_bytes(asset_path)
     else:
         asset_bytes = None
@@ -1194,7 +1593,7 @@ def _parser() -> argparse.ArgumentParser:
 
     manifest = subparsers.add_parser("manifest", help="create a frozen target-free split manifest")
     manifest.add_argument("--public-set", required=True, help="local public_set.jsonl path")
-    manifest.add_argument("--output", help="manifest JSON output; defaults to the external artifact root")
+    manifest.add_argument("--output", help="manifest JSON output; defaults to benchmark-artifacts/")
     manifest.add_argument("--artifact-root", help="explicit artifact root when --output is omitted")
     manifest.add_argument("--seed", type=int, default=0)
     manifest.add_argument("--dev-ratio", type=float, default=DEFAULT_SPLIT_RATIOS["dev"])
@@ -1204,11 +1603,11 @@ def _parser() -> argparse.ArgumentParser:
     baseline = subparsers.add_parser("baseline", help="run the offline deterministic feature-only evaluator")
     baseline.add_argument("--catalog", required=True, help="local catalog.jsonl path")
     baseline.add_argument("--public-set", required=True, help="local public_set.jsonl path")
-    baseline.add_argument("--output", help="result JSON output; defaults to the external artifact root")
+    baseline.add_argument("--output", help="result JSON output; defaults to benchmark-artifacts/")
     baseline.add_argument("--artifact-root", help="explicit artifact root when --output is omitted")
     baseline.add_argument("--manifest", help="optional frozen manifest JSON")
     baseline.add_argument("--split", choices=("all", *SPLIT_NAMES), default="all")
-    baseline.add_argument("--asset-dir", help="optional model/runtime asset directory under PeeB")
+    baseline.add_argument("--asset-dir", help="optional existing model/runtime asset directory")
     baseline.add_argument("--sample-limit", type=int, help="optional deterministic subset size for smoke tests")
 
     rerank = subparsers.add_parser("rerank", help="run the Qwen3 reranker on a frozen non-locked split")
@@ -1222,24 +1621,28 @@ def _parser() -> argparse.ArgumentParser:
         help="experiment split; locked must be explicitly selected",
     )
     rerank.add_argument("--sample-limit", type=int, help="optional deterministic subset size for smoke tests")
-    rerank.add_argument("--output", help="result JSON output; defaults to the external artifact root")
+    rerank.add_argument("--output", help="result JSON output; defaults to benchmark-artifacts/")
     rerank.add_argument("--artifact-root", help="explicit artifact root when --output is omitted")
-    rerank.add_argument("--model-path", required=True, help="local Qwen checkpoint directory under PeeB")
+    rerank.add_argument("--model-path", required=True, help="absolute existing local Qwen checkpoint directory")
     rerank.add_argument("--revision", help="pinned local model revision")
-    rerank.add_argument("--device", choices=("mps", "cpu"), default="mps")
+    rerank.add_argument("--device", choices=("mps", "cpu", "cuda"), default="mps")
     rerank.add_argument("--batch-size", type=int, default=8)
     rerank.add_argument("--candidate-limit", type=int, default=30)
     rerank.add_argument("--timeout-seconds", type=float, default=15.0)
     rerank.add_argument("--fusion-weight", type=float, default=1.0)
+    rerank.add_argument(
+        "--frozen-trace",
+        help="pinned adaptive feature-only trace; fail if live Top-30 diverges",
+    )
 
     compare = subparsers.add_parser("compare", help="compare one baseline to one or more result JSON files")
     compare.add_argument("--baseline", required=True, help="feature-only result JSON")
     compare.add_argument("--reranked", required=True, action="append", help="reranked result JSON; repeatable")
-    compare.add_argument("--output", help="comparison JSON output; defaults to the external artifact root")
+    compare.add_argument("--output", help="comparison JSON output; defaults to benchmark-artifacts/")
     compare.add_argument("--artifact-root", help="explicit artifact root when --output is omitted")
     compare.add_argument("--manifest", help="optional frozen manifest JSON")
     compare.add_argument("--split", choices=("all", *SPLIT_NAMES), default="all")
-    compare.add_argument("--asset-dir", help="optional model/runtime asset directory under PeeB")
+    compare.add_argument("--asset-dir", help="optional existing model/runtime asset directory")
     compare.add_argument("--max-hit-rate-regression", type=float, default=0.01)
     compare.add_argument("--max-mttc-regression", type=float, default=0.50)
     compare.add_argument("--asset-limit-bytes", type=int, default=DEFAULT_ASSET_LIMIT_BYTES)
@@ -1308,6 +1711,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             timeout_seconds=args.timeout_seconds,
             fusion_weight=args.fusion_weight,
             manifest_path=args.manifest,
+            frozen_trace_path=args.frozen_trace,
             split=args.split,
             sample_limit=args.sample_limit,
         )

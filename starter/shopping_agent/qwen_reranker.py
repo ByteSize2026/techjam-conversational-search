@@ -269,7 +269,7 @@ class QwenCrossEncoderReranker:
         self.revision = revision if revision is not None else getattr(self.config, "qwen_reranker_revision", None)
         configured_device = device if device is not None else getattr(self.config, "qwen_reranker_device", "mps")
         configured_device = str(configured_device or "mps").strip().lower()
-        self.device = configured_device if configured_device in {"mps", "cpu"} else "cpu"
+        self.device = configured_device if configured_device in {"mps", "cuda", "cpu"} else "cpu"
         self.batch_size = max(
             int(batch_size if batch_size is not None else getattr(self.config, "qwen_reranker_batch_size", 8)),
             1,
@@ -310,6 +310,7 @@ class QwenCrossEncoderReranker:
         self._model_loaded = self._model is not None
         self._load_attempted = self._model_loaded
         self._load_failures: tuple[BackendFailure, ...] = ()
+        self.active_device: str | None = None
 
     @staticmethod
     def _resolve_path(value: str | Path | None) -> str | None:
@@ -375,6 +376,7 @@ class QwenCrossEncoderReranker:
                     raise TypeError("CrossEncoder factory returned an object without predict()")
                 self._model = model
                 self._model_loaded = True
+                self.active_device = device
                 self._load_failures = tuple(failures)
                 return model, self._load_failures
             except Exception as exc:

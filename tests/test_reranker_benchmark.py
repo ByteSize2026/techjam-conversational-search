@@ -1,21 +1,32 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from scripts.benchmark_qwen_reranker import (
-    EXTERNAL_ROOT,
+    FROZEN_TRACE_SCHEMA_VERSION,
+    FrozenTraceMismatch,
+    _FrozenTraceAgent,
+    _parser,
     build_manifest,
     compare_result_data,
     compare_result_files,
+    load_frozen_adaptive_trace,
     manifest_sample_ids,
     measure_callable,
+    _offline_environment,
     percentile,
+    resolve_artifact_root,
     run_reranked,
     summarize_latencies,
+    validate_asset_directory,
     validate_external_path,
+    validate_model_path,
 )
 from starter.shopping_agent.semantic_ranking import SemanticRankingResult
 
@@ -37,6 +48,72 @@ class FakeReranker:
 
 
 class RerankerBenchmarkTest(unittest.TestCase):
+    @staticmethod
+    def _write_frozen_fixture(
+        root: Path,
+        *,
+        turn_values: list[int] | None = None,
+        retrieval_ids: list[str] | None = None,
+        feature_ids: list[str] | None = None,
+        catalog_reference: Path | None = None,
+        public_reference: Path | None = None,
+    ) -> tuple[Path, Path, Path, str]:
+        catalog_path = root / "catalog.jsonl"
+        public_path = root / "public_set.jsonl"
+        frozen_path = root / "frozen.json"
+        catalog_path.write_text("{}\n", encoding="utf-8")
+        public_path.write_text("{}\n", encoding="utf-8")
+        turns = turn_values or [1]
+        retrieval = retrieval_ids or ["A", "B", "C"]
+        features = feature_ids or ["A", "B", "C"]
+        frozen = {
+            "schema_version": FROZEN_TRACE_SCHEMA_VERSION,
+            "catalog": str(catalog_reference or catalog_path),
+            "public_set": str(public_reference or public_path),
+            "sample_ids": ["s1"],
+            "model_guard": {
+                "mode": "feature_only",
+                "network": "disabled",
+                "reported_token_usage": 0,
+            },
+            "adaptive": {
+                "config": {"adaptive_category_recall_enabled": True},
+                "sample_ids": ["s1"],
+                "sample_count": 1,
+                "target_free_trace": [
+                    {
+                        "session_id": "trace-session",
+                        "turns": [
+                            {
+                                "turn": turn,
+                                "retrieval_candidate_ids": retrieval,
+                                "feature_ranked_ids": features,
+                            }
+                            for turn in turns
+                        ],
+                    }
+                ],
+            },
+        }
+        frozen_path.write_text(json.dumps(frozen), encoding="utf-8")
+        digest = hashlib.sha256(frozen_path.read_bytes()).hexdigest()
+        return frozen_path, catalog_path, public_path, digest
+
+    def _load_fixture_bundle(
+        self,
+        root: Path,
+        **kwargs: object,
+    ) -> tuple[dict[str, object], Path]:
+        frozen_path, catalog_path, public_path, digest = self._write_frozen_fixture(root, **kwargs)
+        bundle = load_frozen_adaptive_trace(
+            frozen_path,
+            catalog_path=catalog_path,
+            public_set_path=public_path,
+            public_sample_ids=["s1"],
+            expected_sha256=digest,
+        )
+        return bundle, frozen_path
+
     def test_manifest_is_deterministic_stratified_and_target_free(self) -> None:
         samples = []
         for scenario in ("buying", "browsing"):
@@ -172,11 +249,166 @@ class RerankerBenchmarkTest(unittest.TestCase):
         self.assertIn("current_rss_bytes", report["process_memory"])
         self.assertIn("peak_rss_bytes", report["process_memory"])
 
-    def test_external_path_guard_rejects_system_disk(self) -> None:
+    def test_offline_environment_sets_flags_without_changing_caches(self) -> None:
+        names = (
+            "HF_HOME",
+            "PIP_CACHE_DIR",
+            "TMPDIR",
+            "XDG_CACHE_HOME",
+            "TORCH_HOME",
+        )
+        sentinels = {name: f"system-{name.lower()}" for name in names}
+        with patch.dict(os.environ, sentinels):
+            with _offline_environment():
+                for name, value in sentinels.items():
+                    self.assertEqual(os.environ[name], value)
+                self.assertEqual(os.environ["HF_HUB_OFFLINE"], "1")
+                self.assertEqual(os.environ["TRANSFORMERS_OFFLINE"], "1")
+                self.assertEqual(os.environ["HF_DATASETS_OFFLINE"], "1")
+            for name, value in sentinels.items():
+                self.assertEqual(os.environ.get(name), value)
+
+    def test_frozen_trace_validates_hash_portable_sources_and_alignment(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            with self.assertRaises(ValueError):
-                validate_external_path(directory)
-        self.assertEqual(validate_external_path(EXTERNAL_ROOT / "models"), EXTERNAL_ROOT / "models")
+            root = Path(directory)
+            bundle, frozen_path = self._load_fixture_bundle(root)
+            self.assertEqual(bundle["sample_ids"], ["s1"])
+            self.assertEqual(bundle["sha256"], hashlib.sha256(frozen_path.read_bytes()).hexdigest())
+
+            with self.assertRaisesRegex(ValueError, "SHA256 mismatch"):
+                load_frozen_adaptive_trace(
+                    frozen_path,
+                    catalog_path=root / "catalog.jsonl",
+                    public_set_path=root / "public_set.jsonl",
+                    public_sample_ids=["s1"],
+                    expected_sha256="0" * 64,
+                )
+
+            portable = load_frozen_adaptive_trace(
+                frozen_path,
+                catalog_path=Path("/another-machine/catalog.jsonl"),
+                public_set_path=Path("/another-machine/public_set.jsonl"),
+                public_sample_ids=["s1"],
+                expected_sha256=bundle["sha256"],
+            )
+            self.assertEqual(portable["sample_ids"], ["s1"])
+
+            with self.assertRaisesRegex(ValueError, "sample ID/order mismatch"):
+                load_frozen_adaptive_trace(
+                    frozen_path,
+                    catalog_path=root / "catalog.jsonl",
+                    public_set_path=root / "public_set.jsonl",
+                    public_sample_ids=["other"],
+                    expected_sha256=bundle["sha256"],
+                )
+
+    def test_frozen_trace_rejects_turn_and_whitelist_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            frozen_path, catalog_path, public_path, digest = self._write_frozen_fixture(
+                root,
+                turn_values=[1, 1],
+            )
+            with self.assertRaisesRegex(ValueError, "invalid turn sequence"):
+                load_frozen_adaptive_trace(
+                    frozen_path,
+                    catalog_path=catalog_path,
+                    public_set_path=public_path,
+                    public_sample_ids=["s1"],
+                    expected_sha256=digest,
+                )
+
+            frozen_path, catalog_path, public_path, digest = self._write_frozen_fixture(
+                root,
+                retrieval_ids=["A", "B"],
+                feature_ids=["A", "unknown"],
+            )
+            with self.assertRaisesRegex(ValueError, "candidate whitelist"):
+                load_frozen_adaptive_trace(
+                    frozen_path,
+                    catalog_path=catalog_path,
+                    public_set_path=public_path,
+                    public_sample_ids=["s1"],
+                    expected_sha256=digest,
+                )
+
+    def test_frozen_agent_fails_closed_on_live_feature_top30_mismatch(self) -> None:
+        class Delegate:
+            def reset(self, session_id: str, user_profile: dict) -> None:
+                del session_id, user_profile
+
+            def _feature_rank(
+                self,
+                state: object,
+                candidates: list[object],
+                context: object,
+                *,
+                limit: int | None = None,
+            ) -> list[object]:
+                del state, context, limit
+                return list(candidates)
+
+        with tempfile.TemporaryDirectory() as directory:
+            bundle, _ = self._load_fixture_bundle(Path(directory))
+            traces = bundle["traces"]
+            self.assertIsInstance(traces, list)
+            controller = _FrozenTraceAgent(Delegate(), ["s1"], traces)
+            controller.reset("session", {})
+            candidates = [
+                type("Candidate", (), {"parent_asin": "B"})(),
+                type("Candidate", (), {"parent_asin": "A"})(),
+                type("Candidate", (), {"parent_asin": "C"})(),
+            ]
+            with self.assertRaises(FrozenTraceMismatch):
+                controller._feature_rank(
+                    None,
+                    candidates,
+                    type("Context", (), {"turn": 1})(),
+                    limit=3,
+                )
+            with self.assertRaises(FrozenTraceMismatch):
+                controller.assert_complete()
+
+    def test_rerank_cli_exposes_frozen_trace_and_cuda(self) -> None:
+        args = _parser().parse_args(
+            [
+                "rerank",
+                "--catalog",
+                "catalog.jsonl",
+                "--public-set",
+                "public_set.jsonl",
+                "--model-path",
+                "/content/model",
+                "--device",
+                "cuda",
+                "--frozen-trace",
+                "/content/trace.json",
+            ]
+        )
+        self.assertEqual(args.device, "cuda")
+        self.assertEqual(args.frozen_trace, "/content/trace.json")
+
+    def test_local_path_validation_is_portable_and_explicit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            model_path = root / "model"
+            model_path.mkdir()
+            self.assertEqual(validate_model_path(model_path), model_path.resolve())
+            self.assertEqual(validate_asset_directory(model_path), model_path.resolve())
+            self.assertEqual(validate_external_path(model_path), model_path.resolve())
+
+            with self.assertRaisesRegex(ValueError, "absolute"):
+                validate_model_path("relative-model")
+            with self.assertRaisesRegex(ValueError, "does not exist"):
+                validate_model_path(root / "missing")
+            not_a_directory = root / "checkpoint.bin"
+            not_a_directory.write_bytes(b"fixture")
+            with self.assertRaisesRegex(ValueError, "directory"):
+                validate_model_path(not_a_directory)
+
+        # Colab's /content path is a valid explicit artifact location.
+        self.assertEqual(resolve_artifact_root("/content/qwen-results"), Path("/content/qwen-results"))
+        self.assertEqual(resolve_artifact_root("/"), Path("/"))
 
     def test_rerank_runner_uses_qwen_config_and_emits_metrics_without_model(self) -> None:
         catalog_rows = [
@@ -233,12 +465,14 @@ class RerankerBenchmarkTest(unittest.TestCase):
                 encoding="utf-8",
             )
             manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            model_path = root / "qwen-model"
+            model_path.mkdir()
 
             result = run_reranked(
                 catalog_path,
                 public_path,
                 output_path,
-                model_path=EXTERNAL_ROOT / "test-fixtures" / "qwen3-reranker",
+                model_path=model_path,
                 revision="test-revision",
                 device="cpu",
                 batch_size=2,
@@ -264,7 +498,7 @@ class RerankerBenchmarkTest(unittest.TestCase):
             self.assertIn("hit_rate_at_10", benchmark["evaluator_metrics"])
             self.assertIn("wall_time_ms", benchmark["resource"])
             self.assertIn("fallback_count", benchmark["resource"])
-            self.assertFalse(benchmark["resource"]["external_asset_path_exists"])
+            self.assertTrue(benchmark["resource"]["external_asset_path_exists"])
 
     def test_rerank_defaults_to_validation_and_requires_manifest_for_named_split(self) -> None:
         parser = __import__("scripts.benchmark_qwen_reranker", fromlist=["_parser"])._parser()
@@ -276,7 +510,7 @@ class RerankerBenchmarkTest(unittest.TestCase):
                 "--public-set",
                 "public_set.jsonl",
                 "--model-path",
-                str(EXTERNAL_ROOT / "model"),
+                "/content/model",
             ]
         )
         self.assertEqual(args.split, "validation")

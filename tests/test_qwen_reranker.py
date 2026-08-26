@@ -41,7 +41,7 @@ class QwenRerankerTests(unittest.TestCase):
             return _FakeCrossEncoder([1.0])
 
         ranker = QwenCrossEncoderReranker(
-            model_path="/Volumes/PeeB/ai-models/techjam/models/qwen",
+            model_path="/tmp/qwen",
             model_factory=model_factory,
         )
         self.assertEqual(calls, [])
@@ -119,7 +119,7 @@ class QwenRerankerTests(unittest.TestCase):
             return _FakeCrossEncoder([0.5])
 
         result = QwenCrossEncoderReranker(
-            model_path="/Volumes/PeeB/ai-models/techjam/models/qwen",
+            model_path="/tmp/qwen",
             device="cpu",
             model_factory=factory,
         ).rank("request", [_Candidate("A")])
