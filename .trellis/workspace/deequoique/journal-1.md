@@ -47,3 +47,24 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 3: Deterministic dialogue ranking and exhausted reopen
+
+**Date**: 2026-08-27
+**Task**: Deterministic dialogue ranking and exhausted reopen
+**Branch**: `main`
+
+### Summary
+
+Implemented target-preserving structured pools, deterministic ranking evidence, dynamic recommendation commit policy, exhaustion state, other-first clarification, and one-turn clarification bypass after explicit recommendation rejection. Final offline evaluation: score 0.884923, Hit@10 0.99, MRR 0.775411, MTTC 3.135, usage 0; unittest 75/75.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a9ed63f` | (see git log) |
+
+### Status
+
+[OK] **Completed**

@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 2
-- **Last Active**: 2026-08-26
+- **Total Sessions**: 3
+- **Last Active**: 2026-08-27
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~49 | Active |
+| `journal-1.md` | ~70 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 3 | 2026-08-27 | Deterministic dialogue ranking and exhausted reopen | `a9ed63f` | `main` |
 | 2 | 2026-08-26 | Qwen3 reranker benchmark 收尾 | `5362c67` | `main` |
 | 1 | 2026-08-25 | 初始化中文 Trellis 项目规范 | `3376bce` | `main` |
 <!-- @@@/auto:session-history -->
