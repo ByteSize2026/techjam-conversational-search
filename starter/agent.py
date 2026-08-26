@@ -1,102 +1,612 @@
+"""Offline-first public facade for the shopping agent."""
+
 from __future__ import annotations
 
-import json
-import re
-import sqlite3
+from collections import Counter
+from collections.abc import Mapping, Sequence
+import math
 from pathlib import Path
+import re
+import time
 
-
-TOKEN_RE = re.compile(r"[a-z0-9]+", re.IGNORECASE)
-STOPWORDS = {
-    "a", "an", "and", "are", "as", "at", "be", "but", "by", "for", "from",
-    "i", "in", "is", "it", "me", "my", "of", "on", "or", "please", "some",
-    "that", "the", "this", "to", "want", "with", "would", "you", "looking",
-}
-
-
-def _text(value: object) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, dict):
-        return " ".join(f"{key} {item}" for key, item in value.items())
-    if isinstance(value, list):
-        return " ".join(str(item) for item in value)
-    return str(value)
-
-
-def _terms(text: str) -> list[str]:
-    return [
-        token.lower()
-        for token in TOKEN_RE.findall(text)
-        if len(token) > 1 and token.lower() not in STOPWORDS
-    ]
+from .shopping_agent.catalog import CatalogRepository, ProductRecord, RetrievedProduct, safe_terms
+from .shopping_agent.config import AgentConfig
+from .shopping_agent.policy import CandidateGate, ClarificationPolicy, IntentRouter, RouteDecision
+from .shopping_agent.semantic_ranking import LLMSemanticRanker
+from .shopping_agent.state import (
+    ALLOWED_ATTRIBUTES,
+    CandidateStats,
+    RuntimeContext,
+    SessionState,
+    SessionStore,
+    StateReducer,
+    parse_intent_update,
+)
 
 
 class Agent:
-    """Editable weak baseline: stateless BM25 retrieval with no LLM dependency."""
+    """Stateful, deterministic retrieval pipeline with optional LLM reranking."""
 
-    def __init__(self, catalog_path: str | Path = "data/catalog.jsonl") -> None:
+    def __init__(
+        self,
+        catalog_path: str | Path = "data/catalog.jsonl",
+        *,
+        config: AgentConfig | None = None,
+        repository: CatalogRepository | None = None,
+        model_client: object | None = None,
+        semantic_ranker: object | None = None,
+        router: IntentRouter | None = None,
+        candidate_gate: CandidateGate | None = None,
+        clarification_policy: ClarificationPolicy | None = None,
+    ) -> None:
         self.catalog_path = Path(catalog_path)
-        self.connection = sqlite3.connect(":memory:")
-        self._sessions: set[str] = set()
-        self._build_index()
-
-    def _build_index(self) -> None:
-        cursor = self.connection.cursor()
-        cursor.execute(
-            "CREATE VIRTUAL TABLE products USING fts5("
-            "parent_asin UNINDEXED, title, categories, features, details, store, description, "
-            "tokenize='unicode61 remove_diacritics 2')"
+        self.config = config or AgentConfig.from_env()
+        self.repository = repository or CatalogRepository(self.catalog_path)
+        self.catalog = self.repository
+        self.connection = self.repository.connection
+        self.store = SessionStore()
+        self.sessions = self.store.sessions
+        self._sessions = self.sessions
+        self.reducer = StateReducer()
+        self.router = router or IntentRouter(retrieval_budget=self.config.retrieval_limit)
+        self.candidate_gate = candidate_gate or CandidateGate()
+        self.clarification_policy = clarification_policy or ClarificationPolicy()
+        self.semantic_ranker = semantic_ranker or LLMSemanticRanker(
+            client=model_client,
+            config=self.config,
+            candidate_limit=self.config.candidate_limit,
         )
-        batch: list[tuple[str, str, str, str, str, str, str]] = []
-        with self.catalog_path.open(encoding="utf-8") as handle:
-            for line in handle:
-                product = json.loads(line)
-                batch.append(
-                    (
-                        str(product["parent_asin"]),
-                        _text(product.get("title")),
-                        _text(product.get("categories")),
-                        _text(product.get("features")),
-                        _text(product.get("details")),
-                        _text(product.get("store")),
-                        _text(product.get("description")),
-                    )
-                )
-                if len(batch) >= 1000:
-                    cursor.executemany("INSERT INTO products VALUES (?, ?, ?, ?, ?, ?, ?)", batch)
-                    batch.clear()
-        if batch:
-            cursor.executemany("INSERT INTO products VALUES (?, ?, ?, ?, ?, ?, ?)", batch)
-        self.connection.commit()
+        self.last_diagnostics: dict[str, object] = {
+            "event": "initialized",
+            "catalog_size": len(self.repository),
+            "model_backends": self._model_backends(),
+        }
+
+    def _model_backends(self) -> list[str]:
+        names = getattr(getattr(self.semantic_ranker, "client", None), "backend_names", ())
+        return [str(name) for name in names] if isinstance(names, (list, tuple)) else []
 
     def reset(self, session_id: str, user_profile: dict) -> None:
-        # The profile is anonymized and may be used for personalization.
-        self._sessions.add(session_id)
+        """Replace any prior state for this session ID."""
 
-    def respond(
-        self,
-        session_id: str,
-        user_message: str,
-        turn: int,
-        top_k: int,
-    ) -> dict:
-        if session_id not in self._sessions:
-            raise RuntimeError("reset must be called before respond")
-        unique_terms = list(dict.fromkeys(_terms(user_message)))[:40]
-        expression = " OR ".join(f'"{term}"' for term in unique_terms)
-        if not expression:
-            recommendations: list[dict] = []
-        else:
-            rows = self.connection.execute(
-                "SELECT parent_asin FROM products WHERE products MATCH ? "
-                "ORDER BY bm25(products, 0.0, 6.0, 4.0, 2.5, 2.5, 1.5, 1.0) LIMIT ?",
-                (expression, top_k),
-            ).fetchall()
-            recommendations = [{"parent_asin": str(row[0])} for row in rows]
-        return {
-            "message": "Here are the closest matches I found.",
-            "ask_attribute": None,
-            "recommendations": recommendations,
-            "usage": {"prompt_tokens": 0, "completion_tokens": 0},
+        state = self.store.reset(session_id, user_profile)
+        self.last_diagnostics = {
+            "event": "reset",
+            "session_id": state.session_id,
+            "intent_epoch": state.intent_epoch,
+            "catalog_size": len(self.repository),
+            "model_backends": self._model_backends(),
         }
+
+    def respond(self, session_id: str, user_message: str, turn: int, top_k: int) -> dict:
+        started = time.perf_counter()
+        state = self.store.get(session_id)
+        missing_reset = state is None
+        if state is None:
+            state = self.store.reset(session_id, {})
+        try:
+            response = self._respond_impl(state, user_message, turn, top_k)
+        except Exception as exc:  # public boundary must not leak pipeline errors
+            response = self._fallback_response(top_k)
+            self.last_diagnostics = {
+                "event": "pipeline_error",
+                "session_id": state.session_id,
+                "turn": int(turn),
+                "intent_epoch": state.intent_epoch,
+                "error": f"{type(exc).__name__}: {exc}"[:500],
+            }
+        self.last_diagnostics = {
+            **self.last_diagnostics,
+            "session_id": state.session_id,
+            "turn": int(turn),
+            "latency_ms": round((time.perf_counter() - started) * 1000.0, 3),
+            "missing_reset": missing_reset,
+        }
+        state.last_diagnostics = dict(self.last_diagnostics)
+        return self._guard(response, top_k)
+
+    def _respond_impl(self, state: SessionState, user_message: object, turn: int, top_k: int) -> dict:
+        turn = max(int(turn), 1)
+        limit = self._limit(top_k)
+        message = str(user_message or "")
+        old_epoch = state.intent_epoch
+        update = parse_intent_update(message, turn=turn)
+        self.reducer.apply(state, update, turn=turn)
+        state.record_message(turn, message)
+        context = state.runtime_context(turn=turn, remaining_turns=max(10 - turn, 0))
+        route = self.router.decide(context)
+        state.active_route = route.mode
+        candidates = self._retrieve(state, message, route.retrieval_budget, route=route)
+        stats = self._stats(state, candidates, message)
+        state.last_candidate_stats = stats
+        context = state.runtime_context(
+            turn=turn,
+            remaining_turns=max(10 - turn, 0),
+            route_hint=route.mode,
+            candidate_stats=stats,
+        )
+        gate = self.candidate_gate.evaluate(stats, context, turn=turn)
+        # CandidateGate runs after the cheap probe/retrieval stage.  Its
+        # retrieval_limit is therefore the last safe point at which we can
+        # prevent an over-general turn from feeding an unnecessarily large
+        # candidate set into feature ranking or the model backend.
+        route_budget = max(int(getattr(route, "retrieval_budget", self.config.retrieval_limit)), 0)
+        gate_budget = max(int(getattr(gate, "retrieval_limit", route_budget)), 0)
+        effective_budget = min(route_budget, gate_budget)
+        ranked = self._feature_rank(state, candidates, context, limit=effective_budget)
+        semantic = None
+        semantic_input_count = 0
+        if gate.run_semantic_ranker and ranked:
+            semantic_candidates = ranked[: min(effective_budget, self.config.candidate_limit)]
+            semantic_input_count = len(semantic_candidates)
+            semantic = self._semantic_rank(context, semantic_candidates, limit=effective_budget)
+            if semantic is not None:
+                ranked = self._apply_semantic(ranked, semantic)
+        records = [item.product for item in ranked]
+        ask_attribute = self.clarification_policy.choose_attribute(
+            state,
+            records,
+            stats,
+            turn=turn,
+            remaining_turns=max(10 - turn, 0),
+        )
+        if ask_attribute:
+            state.record_asked(ask_attribute)
+        ids = self._valid_ids([item.parent_asin for item in ranked], limit)
+        state.last_candidate_ids = list(ids)
+        state.record_recommendations(ids)
+        result: dict[str, object] = {
+            "message": self._message(ask_attribute, gate.over_general),
+            "ask_attribute": ask_attribute,
+            "recommendations": [{"parent_asin": item} for item in ids],
+        }
+        usage = self._usage(semantic)
+        if usage is not None:
+            result["usage"] = usage
+        self.last_diagnostics = {
+            "event": "respond",
+            "session_id": state.session_id,
+            "turn": turn,
+            "intent_epoch": state.intent_epoch,
+            "epoch_changed": state.intent_epoch != old_epoch,
+            "route": route.mode,
+            "route_reason": route.reason_code,
+            "route_weights": {
+                "buying": float(route.buying_weight),
+                "browsing": float(route.browsing_weight),
+            },
+            "retrieval_budget": route_budget,
+            "gate": gate.mode,
+            "gate_reason": gate.reason_code,
+            "gate_retrieval_limit": gate_budget,
+            "effective_budget": effective_budget,
+            "feature_input_count": min(len(candidates), effective_budget),
+            "semantic_input_count": semantic_input_count,
+            "candidate_count": len(candidates),
+            "retrieval_sources": self._source_counts(candidates),
+            "candidate_stats": stats.as_dict(),
+            "recommendation_count": len(ids),
+            "asked_attribute": ask_attribute,
+            "no_preference": sorted(state.no_preference),
+            "seen_in_epoch": len(state.seen_recommendations),
+            "model_backend": getattr(semantic, "backend", None),
+            "model_failures": self._failures(semantic),
+            "usage": usage,
+        }
+        return result
+
+    @staticmethod
+    def _limit(value: object) -> int:
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            value = 10
+        return max(min(value, 10), 0)
+
+    def _retrieve(
+        self,
+        state: SessionState,
+        latest: str,
+        budget: int,
+        *,
+        route: RouteDecision | None = None,
+    ) -> list[RetrievedProduct]:
+        """Retrieve through the route selected for this turn.
+
+        The dense asset is intentionally not assumed here.  Browsing's
+        Phase-1 fallback is broad lexical recall plus category interleaving;
+        Buying is a smaller, precision-weighted lexical union.  Mixed mode
+        keeps both route outputs and combines their weighted scores.
+        """
+
+        if route is None:
+            route = self.router.decide(state.runtime_context(turn=1, remaining_turns=9))
+        mode = str(getattr(route, "mode", "browsing")).lower()
+        if mode not in {"buying", "browsing", "mixed"}:
+            mode = "browsing"
+        buying_weight = max(float(getattr(route, "buying_weight", 0.0)), 0.0)
+        browsing_weight = max(float(getattr(route, "browsing_weight", 0.0)), 0.0)
+        per_query = min(max(int(budget), 20), 120)
+
+        # Each tuple is (query, source, route name, source weight).  Keeping
+        # route and source in the provenance string makes the final candidate
+        # diagnostics explainable without storing hidden evaluator data.
+        specs: list[tuple[str, str, str, float, float]] = []
+        if mode in {"buying", "mixed"} and buying_weight > 0.0:
+            if latest.strip():
+                specs.append((latest, "latest", "buying", buying_weight, 1.00))
+            if state.category_anchor:
+                specs.append((state.category_anchor, "category", "buying", buying_weight, 1.25))
+            if state.active_constraints:
+                specs.append(
+                    (
+                        " ".join(item.value for item in state.active_constraints),
+                        "constraints",
+                        "buying",
+                        buying_weight,
+                        1.50,
+                    )
+                )
+        if mode in {"browsing", "mixed"} and browsing_weight > 0.0:
+            if latest.strip():
+                specs.append((latest, "latest", "browsing", browsing_weight, 0.65))
+            if state.query_terms:
+                specs.append(
+                    (
+                        " ".join(state.query_terms),
+                        "accumulated",
+                        "browsing",
+                        browsing_weight,
+                        1.00,
+                    )
+                )
+            if state.active_preferences:
+                specs.append(
+                    (
+                        " ".join(item.value for item in state.active_preferences),
+                        "preferences",
+                        "browsing",
+                        browsing_weight,
+                        0.75,
+                    )
+                )
+            tags = state.profile.get("preference_tags", ())
+            if isinstance(tags, str):
+                tags = (tags,)
+            if isinstance(tags, (list, tuple, set)) and tags:
+                specs.append(
+                    (
+                        " ".join(str(tag) for tag in list(tags)[:6]),
+                        "profile",
+                        "browsing",
+                        browsing_weight,
+                        0.55,
+                    )
+                )
+            if state.category_anchor:
+                specs.append((state.category_anchor, "category", "browsing", browsing_weight, 0.45))
+
+        unique: list[tuple[str, str, str, float, float]] = []
+        seen_queries: set[tuple[str, str]] = set()
+        for query, source, route_name, route_weight, source_weight in specs:
+            key = (route_name, query.lower().strip())
+            if key[1] and key not in seen_queries:
+                seen_queries.add(key)
+                unique.append((query, source, route_name, route_weight, source_weight))
+        if not unique:
+            # A route with zero weights (or an empty message/profile) still
+            # returns valid products, but its fallback remains visible in
+            # provenance rather than looking like a lexical hit.
+            fallback_route = "buying" if mode == "buying" else "browsing"
+            unique = [("", "popularity", fallback_route, 1.0, 0.25)]
+
+        # Merge each route separately so Browsing can diversify before Mixed
+        # performs its union.  Scores are route_weight * source_weight * RRF;
+        # unlike the old global merge, changing the Router decision changes
+        # both query selection and the resulting candidate scores.
+        route_merged: dict[str, dict[str, dict[str, object]]] = {"buying": {}, "browsing": {}}
+        for query, source, route_name, route_weight, source_weight in unique[:8]:
+            labeled_source = f"{route_name}:{source}"
+            try:
+                found = self.repository.search_with_scores(query, per_query, source=labeled_source)
+            except Exception:
+                found = []
+            for rank, item in enumerate(found, 1):
+                entry = route_merged[route_name].setdefault(
+                    item.parent_asin,
+                    {"product": item.product, "score": 0.0, "sources": [], "best": 0.0},
+                )
+                weighted = route_weight * source_weight
+                entry["score"] = float(entry["score"]) + weighted * 100.0 / (60.0 + rank)
+                entry["best"] = max(float(entry["best"]), weighted * max(float(item.score), 0.0))
+                if isinstance(entry["sources"], list) and labeled_source not in entry["sources"]:
+                    entry["sources"].append(labeled_source)
+
+        route_outputs: dict[str, list[RetrievedProduct]] = {"buying": [], "browsing": []}
+        for route_name, merged in route_merged.items():
+            output: list[RetrievedProduct] = []
+            for entry in merged.values():
+                product = entry["product"]
+                if isinstance(product, ProductRecord):
+                    source = "+".join(str(value) for value in entry["sources"])
+                    output.append(
+                        RetrievedProduct(product, float(entry["score"]) + float(entry["best"]), source, 0)
+                    )
+            output.sort(key=lambda item: (-item.score, item.parent_asin))
+            if route_name == "browsing":
+                output = self._diversify(output)
+            route_outputs[route_name] = output
+
+        merged: dict[str, dict[str, object]] = {}
+        for route_name in ("buying", "browsing"):
+            for item in route_outputs[route_name]:
+                entry = merged.setdefault(
+                    item.parent_asin,
+                    {"product": item.product, "score": 0.0, "sources": []},
+                )
+                entry["score"] = float(entry["score"]) + item.score
+                if isinstance(entry["sources"], list):
+                    for source in item.source.split("+"):
+                        if source not in entry["sources"]:
+                            entry["sources"].append(source)
+        output = [
+            RetrievedProduct(
+                entry["product"],
+                float(entry["score"]),
+                "+".join(str(value) for value in entry["sources"]),
+                0,
+            )
+            for entry in merged.values()
+            if isinstance(entry["product"], ProductRecord)
+        ]
+        if not output:
+            output = [
+                RetrievedProduct(product, 0.0, f"{mode}:popularity", index)
+                for index, product in enumerate(self.repository.popular(per_query), 1)
+            ]
+        output.sort(key=lambda item: (-item.score, item.parent_asin))
+        if mode == "browsing":
+            output = self._diversify(output)
+        return output[: max(per_query * 2, self.config.candidate_limit)]
+
+    @staticmethod
+    def _diversify(candidates: Sequence[RetrievedProduct], limit: int | None = None) -> list[RetrievedProduct]:
+        """Interleave leaf categories while retaining each route's score."""
+
+        target = len(candidates) if limit is None else max(int(limit), 0)
+        if target <= 0:
+            return []
+        buckets: dict[str, list[RetrievedProduct]] = {}
+        order: list[str] = []
+        for item in candidates:
+            categories = item.product.categories
+            key = next((str(value).strip().lower() for value in reversed(categories) if str(value).strip()), "__unknown__")
+            if key not in buckets:
+                buckets[key] = []
+                order.append(key)
+            buckets[key].append(item)
+        output: list[RetrievedProduct] = []
+        while len(output) < target:
+            progressed = False
+            for key in order:
+                bucket = buckets[key]
+                if bucket:
+                    output.append(bucket.pop(0))
+                    progressed = True
+                    if len(output) >= target:
+                        break
+            if not progressed:
+                break
+        return output
+
+    @staticmethod
+    def _source_counts(candidates: Sequence[RetrievedProduct]) -> dict[str, int]:
+        counts: Counter[str] = Counter()
+        for item in candidates:
+            for source in item.source.split("+"):
+                if source:
+                    counts[source] += 1
+        return dict(sorted(counts.items()))
+
+    def _stats(self, state: SessionState, candidates: Sequence[RetrievedProduct], latest: str) -> CandidateStats:
+        query = " ".join((latest, state.category_anchor or "", " ".join(item.value for item in state.active_constraints)))
+        try:
+            estimate = self.repository.estimate_count(query)
+        except Exception:
+            estimate = len(candidates)
+        categories = [value.lower() for item in candidates[:100] for value in item.product.categories[:2] if value]
+        entropy: dict[str, float] = {}
+        for attribute in ("material", "color", "size", "style", "brand", "budget", "feature", "use_case"):
+            entropy[attribute] = self._entropy(self._attribute_values(candidates[:100], attribute))
+        return CandidateStats(
+            estimated_count=max(int(estimate), len(candidates)),
+            category_entropy=self._entropy(categories),
+            attribute_entropy=entropy,
+            active_hard_constraint_count=sum(item.hardness == "hard" for item in state.active_constraints),
+        )
+
+    @staticmethod
+    def _entropy(values: Sequence[str]) -> float:
+        counts = Counter(value for value in values if value)
+        total = sum(counts.values())
+        return -sum((count / total) * math.log(count / total) for count in counts.values()) if total and len(counts) > 1 else 0.0
+
+    @staticmethod
+    def _attribute_values(candidates: Sequence[RetrievedProduct], attribute: str) -> list[str]:
+        words = {
+            "material": ("cotton", "polyester", "nylon", "leather", "wool", "silk", "linen", "denim"),
+            "color": ("black", "white", "blue", "red", "pink", "green", "brown", "gray", "grey", "navy"),
+            "size": ("size", "sizing", "small", "medium", "large", "wide", "narrow"),
+            "style": ("fit", "comfort", "style", "casual", "formal", "warmth", "durable"),
+            "feature": ("waterproof", "pocket", "hood", "durable", "feature"),
+            "use_case": ("hiking", "running", "gym", "work", "winter", "outdoor", "travel", "walking"),
+        }
+        output: list[str] = []
+        for item in candidates:
+            product = item.product
+            if attribute == "budget" and product.price is not None:
+                output.append(str(round(product.price / 25.0)))
+            elif attribute == "brand" and product.store:
+                output.append(product.store.lower())
+            else:
+                text = product.canonical_text.lower()
+                match = next((word for word in words.get(attribute, ()) if re.search(rf"\b{re.escape(word)}\b", text)), None)
+                if match:
+                    output.append(match)
+        return output
+
+    def _feature_rank(
+        self,
+        state: SessionState,
+        candidates: Sequence[RetrievedProduct],
+        context: RuntimeContext,
+        *,
+        limit: int | None = None,
+    ) -> list[RetrievedProduct]:
+        input_candidates = list(candidates)
+        if limit is not None:
+            input_candidates = input_candidates[: max(int(limit), 0)]
+        query_terms = set(safe_terms(" ".join(state.query_terms)))
+        scored: list[tuple[float, int, RetrievedProduct]] = []
+        for index, item in enumerate(input_candidates):
+            product = item.product
+            text = product.canonical_text.lower()
+            score = item.score + 0.18 * sum(term in text for term in query_terms)
+            if context.category_anchor:
+                score += 1.8 * sum(term in text for term in safe_terms(context.category_anchor))
+            for constraint in state.active_constraints:
+                terms = safe_terms(constraint.value)
+                if not terms:
+                    continue
+                ratio = sum(term in text for term in terms) / len(terms)
+                if constraint.polarity == "avoid":
+                    score -= 3.0 * ratio
+                elif constraint.hardness == "hard":
+                    score += 5.0 * ratio
+                else:
+                    score += 1.6 * ratio
+            tags = state.profile.get("preference_tags", ())
+            if isinstance(tags, str):
+                tags = (tags,)
+            if isinstance(tags, (list, tuple, set)):
+                score += 0.08 * sum(bool(safe_terms(tag)) and safe_terms(tag)[0] in text for tag in tags)
+            if product.rating is not None:
+                score += 0.05 * max(0.0, min(float(product.rating), 5.0))
+            if product.rating_count is not None:
+                score += 0.03 * math.log1p(max(product.rating_count, 0))
+            if item.parent_asin in state.seen_recommendations:
+                score -= 8.0
+            scored.append((score, index, item))
+        scored.sort(key=lambda value: (-value[0], value[1], value[2].parent_asin))
+        ordered = [value[2] for value in scored]
+        unseen = [item for item in ordered if item.parent_asin not in state.seen_recommendations]
+        ordered = unseen + [item for item in ordered if item.parent_asin in state.seen_recommendations] if unseen else ordered
+        if context.route_hint == "browsing":
+            ordered = self._diversify(ordered)
+        output_limit = max(int(limit), 0) if limit is not None else max(self.config.retrieval_limit, self.config.candidate_limit)
+        return ordered[:output_limit]
+
+    def _semantic_rank(
+        self,
+        context: RuntimeContext,
+        candidates: Sequence[RetrievedProduct],
+        *,
+        limit: int | None = None,
+    ) -> object | None:
+        summary = {
+            "category_anchor": context.category_anchor,
+            "hard_constraints": [item.as_dict() for item in context.hard_constraints],
+            "soft_preferences": [item.as_dict() for item in context.soft_preferences],
+            "avoided_values": [item.as_dict() for item in context.avoided_values],
+            "profile_priors": list(context.profile_priors),
+            "epoch": context.intent_epoch,
+            "turn": context.turn,
+        }
+        try:
+            candidate_limit = self.config.candidate_limit
+            if limit is not None:
+                candidate_limit = min(candidate_limit, max(int(limit), 0))
+            return self.semantic_ranker.rank(summary, list(candidates[:candidate_limit]))
+        except Exception as exc:
+            self.last_diagnostics = {**self.last_diagnostics, "model_failures": [f"{type(exc).__name__}: {exc}"[:500]]}
+            return None
+
+    @staticmethod
+    def _apply_semantic(candidates: Sequence[RetrievedProduct], result: object) -> list[RetrievedProduct]:
+        ordered_ids = getattr(result, "ordered_parent_asins", ())
+        if not isinstance(ordered_ids, (list, tuple)):
+            return list(candidates)
+        by_id = {item.parent_asin: item for item in candidates}
+        output: list[RetrievedProduct] = []
+        seen: set[str] = set()
+        for value in ordered_ids:
+            item = by_id.get(str(value).strip())
+            if item is not None and item.parent_asin not in seen:
+                output.append(item)
+                seen.add(item.parent_asin)
+        return output + [item for item in candidates if item.parent_asin not in seen]
+
+    @staticmethod
+    def _usage(result: object | None) -> dict[str, int] | None:
+        if result is None or not getattr(result, "backend", None):
+            return None
+        usage = getattr(result, "usage", None)
+        if not isinstance(usage, Mapping):
+            return None
+        prompt, completion = usage.get("prompt_tokens"), usage.get("completion_tokens")
+        if isinstance(prompt, int) and not isinstance(prompt, bool) and prompt >= 0 and isinstance(completion, int) and not isinstance(completion, bool) and completion >= 0:
+            return {"prompt_tokens": prompt, "completion_tokens": completion}
+        return None
+
+    @staticmethod
+    def _failures(result: object | None) -> list[object]:
+        failures = getattr(result, "failures", ()) if result is not None else ()
+        output: list[object] = []
+        for failure in failures or ():
+            try:
+                output.append(failure.as_dict())
+            except Exception:
+                output.append(str(failure)[:500])
+        return output
+
+    def _fallback_response(self, top_k: object) -> dict[str, object]:
+        ids = self._valid_ids([item.parent_asin for item in self.repository.popular(self._limit(top_k))], self._limit(top_k))
+        return {"message": "Here are the closest matches I found.", "ask_attribute": None, "recommendations": [{"parent_asin": item} for item in ids]}
+
+    def _guard(self, payload: object, top_k: object) -> dict[str, object]:
+        if not isinstance(payload, Mapping):
+            return self._fallback_response(top_k)
+        message = payload.get("message") if isinstance(payload.get("message"), str) else "Here are the closest matches I found."
+        ask = payload.get("ask_attribute") if payload.get("ask_attribute") in ALLOWED_ATTRIBUTES else None
+        raw = payload.get("recommendations")
+        values: list[object] = []
+        if isinstance(raw, Sequence) and not isinstance(raw, (str, bytes)):
+            values = [item.get("parent_asin") if isinstance(item, Mapping) else item for item in raw]
+        response: dict[str, object] = {"message": message, "ask_attribute": ask, "recommendations": [{"parent_asin": item} for item in self._valid_ids(values, self._limit(top_k))]}
+        usage = payload.get("usage")
+        if isinstance(usage, Mapping) and isinstance(usage.get("prompt_tokens"), int) and isinstance(usage.get("completion_tokens"), int) and usage["prompt_tokens"] >= 0 and usage["completion_tokens"] >= 0:
+            response["usage"] = {"prompt_tokens": usage["prompt_tokens"], "completion_tokens": usage["completion_tokens"]}
+        return response
+
+    def _valid_ids(self, values: Sequence[object], limit: int) -> list[str]:
+        result: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            item = str(value).strip() if value is not None else ""
+            if item and item not in seen and item in self.repository.ids:
+                seen.add(item)
+                result.append(item)
+                if len(result) >= limit:
+                    break
+        return result
+
+    @staticmethod
+    def _message(attribute: str | None, over_general: bool) -> str:
+        if not attribute:
+            return "Here are the closest matches I found."
+        label = {"use_case": "intended use", "other": "anything else that matters"}.get(attribute, attribute)
+        prefix = "I found several possibilities." if over_general else "Here are the closest matches."
+        return f"{prefix} Do you have a {label} preference?"
+
+
+__all__ = ["Agent"]

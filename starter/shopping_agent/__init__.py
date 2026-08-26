@@ -1,0 +1,76 @@
+"""Composable building blocks for the shopping-agent implementation."""
+
+from .catalog import CatalogRepository, ProductRecord, RetrievedProduct
+from .config import AgentConfig
+from .model import (
+    BackendFailure,
+    BackendJSONError,
+    BackendRequestError,
+    BackendResponse,
+    BackendValidationError,
+    DeepSeekAPIBackend,
+    DeepSeekBackend,
+    LocalModelBackend,
+    LocalOpenAIBackend,
+    ModelCompletionResult,
+    ModelBackendError,
+    TieredModelClient,
+    TokenUsage,
+)
+from .semantic_ranking import LLMSemanticRanker, SemanticRankingResult
+from .state import (
+    ALLOWED_ATTRIBUTES,
+    CandidateStats,
+    Constraint,
+    ConstraintMutation,
+    IntentUpdate,
+    RuntimeContext,
+    SessionState,
+    SessionStore,
+    StateReducer,
+    parse_intent_update,
+)
+from .policy import (
+    CandidateGate,
+    CandidateGateDecision,
+    ClarificationPolicy,
+    IntentRouter,
+    RouteDecision,
+)
+
+__all__ = [
+    "AgentConfig",
+    "ALLOWED_ATTRIBUTES",
+    "BackendFailure",
+    "BackendJSONError",
+    "BackendRequestError",
+    "BackendResponse",
+    "BackendValidationError",
+    "CandidateGate",
+    "CandidateGateDecision",
+    "CandidateStats",
+    "CatalogRepository",
+    "ClarificationPolicy",
+    "Constraint",
+    "ConstraintMutation",
+    "DeepSeekAPIBackend",
+    "DeepSeekBackend",
+    "LocalModelBackend",
+    "LocalOpenAIBackend",
+    "LLMSemanticRanker",
+    "IntentRouter",
+    "IntentUpdate",
+    "ModelCompletionResult",
+    "ModelBackendError",
+    "SemanticRankingResult",
+    "ProductRecord",
+    "RetrievedProduct",
+    "RouteDecision",
+    "RuntimeContext",
+    "SessionState",
+    "SessionStore",
+    "StateReducer",
+    "TieredModelClient",
+    "TokenUsage",
+    "parse_intent_update",
+]

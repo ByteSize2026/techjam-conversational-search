@@ -85,6 +85,43 @@ Only exact `parent_asin` equality produces a hit. Core metrics are also reported
 
 Teams may use any legally accessible LLM API or local model. Teams manage their own credentials and must never commit API keys. Model choice, estimated cost, token usage, and latency must be disclosed. Token usage is a feasibility metric, not part of the core technical score. The organizer does not provide or reimburse model API credits; teams are responsible for any costs incurred through optional external services.
 
+### Optional Tiered Model Backend
+
+The optional model-assisted path is explicitly tiered and remains usable offline:
+
+```text
+DeepSeek API -> local OpenAI-compatible endpoint -> deterministic fallback
+```
+
+With no relevant environment variables, no model backend is constructed and no network request is made. The deterministic path still returns catalog-valid recommendations. If a configured backend times out, returns an HTTP/JSON/schema error, or fails validation, the next tier is attempted; the semantic ranker then repairs invalid, duplicate, unknown, or omitted IDs using the original deterministic candidate order.
+
+Supported environment variables are:
+
+```text
+SHOPPING_AGENT_DEEPSEEK_API_KEY       # enables the DeepSeek tier
+SHOPPING_AGENT_DEEPSEEK_BASE_URL      # default: https://api.deepseek.com
+SHOPPING_AGENT_DEEPSEEK_MODEL         # default: deepseek-v4-flash
+SHOPPING_AGENT_LOCAL_BASE_URL         # enables local tier when paired with LOCAL_MODEL
+SHOPPING_AGENT_LOCAL_MODEL            # model name sent to the local endpoint
+SHOPPING_AGENT_LOCAL_API_KEY          # optional Authorization token for local servers
+SHOPPING_AGENT_MODEL_TIMEOUT_SECONDS  # per-request hard timeout; default: 8
+SHOPPING_AGENT_MODEL_CANDIDATE_LIMIT  # semantic-ranker candidate cap; default: 30
+SHOPPING_AGENT_CANDIDATE_LIMIT        # compatibility alias for the previous setting
+SHOPPING_AGENT_RETRIEVAL_LIMIT        # retrieval budget; default: 100
+SHOPPING_AGENT_MODEL_MAX_TOKENS       # completion cap; default: 512
+SHOPPING_AGENT_MODEL_TEMPERATURE      # default: 0
+```
+
+Both `SHOPPING_AGENT_LOCAL_BASE_URL` and `SHOPPING_AGENT_LOCAL_MODEL` must be set to enable the local tier. A local server only needs to expose an OpenAI-compatible `POST /chat/completions` endpoint; for example:
+
+```bash
+export SHOPPING_AGENT_LOCAL_BASE_URL=http://127.0.0.1:8000/v1
+export SHOPPING_AGENT_LOCAL_MODEL=my-local-model
+python3 -m evaluator.local_evaluator
+```
+
+This example intentionally does not prescribe a checkpoint or server launch command. Token usage is reported only when the successful backend supplies valid non-negative `prompt_tokens` and `completion_tokens`; failed tiers never contribute usage. Browsing currently uses the broad lexical plus category-diversity fallback. A dense route will be enabled only after frozen assets pass the documented resource and candidate-recall gates.
+
 ## Files
 
 ```text

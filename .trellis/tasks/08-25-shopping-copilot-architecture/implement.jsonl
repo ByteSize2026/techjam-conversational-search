@@ -1,0 +1,5 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/agent/index.md", "reason": "Agent entry contract and quality checklist"}
+{"file": ".trellis/spec/agent/contract-and-state.md", "reason": "Session isolation, override, boundary, and response rules"}
+{"file": ".trellis/spec/guides/offline-reproducibility.md", "reason": "Offline, dependency, and final-run constraints"}
+{"file": ".trellis/tasks/08-25-shopping-copilot-research/research/difficulty-and-options.md", "reason": "Prior retrieval, clarification, overfitting, and experiment research"}
