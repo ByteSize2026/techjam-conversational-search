@@ -64,7 +64,7 @@ from .shopping_agent.state import (
 from .shopping_agent.structured_pool import StructuredCandidatePool
 
 
-class Agent:
+class LegacyAgent:
     """Stateful, deterministic retrieval pipeline with optional LLM reranking."""
 
     def __init__(
@@ -554,4 +554,15 @@ class Agent:
         return response_message(attribute, over_general)
 
 
-__all__ = ["Agent"]
+from .shopping_agent.contest_agent import ContestAgent
+from .shopping_agent.contest_config import PUBLIC
+
+
+class Agent(ContestAgent):
+    """Official scored agent loaded by evaluator.local_evaluator."""
+
+    def __init__(self, catalog_path: str | Path = "data/catalog.jsonl", **_kwargs) -> None:
+        super().__init__(catalog_path, config=PUBLIC)
+
+
+__all__ = ["Agent", "LegacyAgent"]

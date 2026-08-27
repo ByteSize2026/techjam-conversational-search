@@ -131,6 +131,7 @@ def _as_rank_entries(value: object) -> object:
         "ranking",
         "items",
         "results",
+        "products",
     ):
         if key in value:
             entries = value[key]
@@ -185,6 +186,7 @@ def _extract_entries(value: object) -> tuple[list[object], Mapping[str, object] 
         "ranking",
         "items",
         "results",
+        "products",
     ):
         entries = value.get(key)
         if isinstance(entries, list):
@@ -317,10 +319,12 @@ class LLMSemanticRanker:
             {
                 "role": "system",
                 "content": (
-                    "You are a constrained product relevance ranker. Return JSON only, "
-                    "with schema {\"ranked_parent_asins\":[string],\"scores\":{string:number}}. "
+                    "You are a constrained product relevance ranker. "
+                    "Reply with one compact JSON object and nothing else. "
+                    "Schema: {\"ranked_parent_asins\":[string]}. "
+                    "List at most 10 parent_asin values, best first. "
                     "Use only the supplied parent_asin values. Do not invent products. "
-                    "The list may be partial; the caller will repair omissions."
+                    "Omit scores. The caller repairs omissions."
                 ),
             },
             {

@@ -1406,7 +1406,7 @@ def run_reranked(
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
     from evaluator.local_evaluator import catalog_index, evaluate, load_jsonl
-    from starter.agent import Agent
+    from starter.agent import LegacyAgent as Agent
     from starter.shopping_agent.config import AgentConfig
 
     manifest = load_manifest(manifest_path) if manifest_path is not None else None

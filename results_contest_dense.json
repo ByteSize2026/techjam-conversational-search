@@ -1,0 +1,42 @@
+{
+  "combos": [
+    {
+      "name": "contest_public",
+      "gate_size": 5,
+      "hard_filter": true,
+      "seconds": 36.34,
+      "hit_rate_at_10": 1.0,
+      "mrr": 0.942964,
+      "mttc": 2.53,
+      "efficiency": 0.847,
+      "recommended_technical_score": 0.952289,
+      "scenario_metrics": {
+        "boundary": {
+          "sample_count": 10,
+          "hit_rate_at_10": 1.0,
+          "mrr": 1.0,
+          "mttc": 3.4
+        },
+        "browsing": {
+          "sample_count": 80,
+          "hit_rate_at_10": 1.0,
+          "mrr": 0.947917,
+          "mttc": 2.475
+        },
+        "buying": {
+          "sample_count": 80,
+          "hit_rate_at_10": 1.0,
+          "mrr": 0.932708,
+          "mttc": 2.0625
+        },
+        "intent_override": {
+          "sample_count": 30,
+          "hit_rate_at_10": 1.0,
+          "mrr": 0.938095,
+          "mttc": 3.633333
+        }
+      },
+      "misses": []
+    }
+  ]
+}

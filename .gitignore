@@ -5,6 +5,7 @@ __pycache__/
 results.json
 data/catalog.jsonl
 data/releases/
+data/.retrieval_cache/
 catalog.jsonl.gz
 SHA256SUMS
 # Organizer-only code, private evaluation data, manifests, and build reports.

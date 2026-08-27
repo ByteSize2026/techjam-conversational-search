@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from starter.agent import Agent
+from starter.agent import LegacyAgent as Agent
 from starter.shopping_agent.config import AgentConfig
 from starter.shopping_agent.policy import CandidateGateDecision
 from starter.shopping_agent.state import parse_intent_update

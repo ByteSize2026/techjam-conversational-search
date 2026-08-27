@@ -1,0 +1,702 @@
+{
+  "backends": {
+    "title": true,
+    "bm25s": true,
+    "fuzzy": true,
+    "minilm": true,
+    "flashrank": true
+  },
+  "prepare_warnings": [],
+  "baseline_misses": [
+    "public_0002",
+    "public_0016",
+    "public_0017",
+    "public_0020",
+    "public_0026",
+    "public_0028",
+    "public_0035",
+    "public_0038",
+    "public_0040",
+    "public_0054",
+    "public_0064",
+    "public_0071",
+    "public_0083",
+    "public_0084",
+    "public_0092",
+    "public_0094",
+    "public_0096",
+    "public_0100",
+    "public_0115",
+    "public_0126",
+    "public_0144",
+    "public_0145",
+    "public_0169",
+    "public_0174",
+    "public_0177",
+    "public_0180",
+    "public_0183",
+    "public_0187",
+    "public_0198"
+  ],
+  "miss_probe": {
+    "summary": {
+      "n": 29,
+      "hit": 0,
+      "in_retrieval_pool": 15,
+      "in_feature_window": 7,
+      "hit_rate": 0.0,
+      "recall_pool_rate": 0.5172
+    },
+    "still_outside_pool": [
+      "public_0016",
+      "public_0035",
+      "public_0040",
+      "public_0083",
+      "public_0092",
+      "public_0094",
+      "public_0096",
+      "public_0100",
+      "public_0126",
+      "public_0169",
+      "public_0174",
+      "public_0180",
+      "public_0187",
+      "public_0198"
+    ],
+    "in_pool_not_top10": [
+      "public_0002",
+      "public_0017",
+      "public_0020",
+      "public_0026",
+      "public_0028",
+      "public_0038",
+      "public_0054",
+      "public_0064",
+      "public_0071",
+      "public_0084",
+      "public_0115",
+      "public_0144",
+      "public_0145",
+      "public_0177",
+      "public_0183"
+    ]
+  },
+  "backend_oracle": {
+    "summary": {
+      "fts": {
+        "found": 20,
+        "n": 29,
+        "recall": 0.6897,
+        "median_rank": 78,
+        "hits_at_10": 3,
+        "hits_at_50": 8,
+        "hits_at_100": 13
+      },
+      "title": {
+        "found": 1,
+        "n": 29,
+        "recall": 0.0345,
+        "median_rank": 138,
+        "hits_at_10": 0,
+        "hits_at_50": 0,
+        "hits_at_100": 0
+      },
+      "bm25s": {
+        "found": 11,
+        "n": 29,
+        "recall": 0.3793,
+        "median_rank": 24,
+        "hits_at_10": 2,
+        "hits_at_50": 7,
+        "hits_at_100": 9
+      },
+      "fuzzy": {
+        "found": 3,
+        "n": 29,
+        "recall": 0.1034,
+        "median_rank": 51,
+        "hits_at_10": 1,
+        "hits_at_50": 1,
+        "hits_at_100": 2
+      },
+      "minilm": {
+        "found": 11,
+        "n": 29,
+        "recall": 0.3793,
+        "median_rank": 65,
+        "hits_at_10": 0,
+        "hits_at_50": 4,
+        "hits_at_100": 9
+      }
+    },
+    "per_sample": {
+      "public_0002": {
+        "fts": 78,
+        "title": null,
+        "bm25s": 70,
+        "fuzzy": 186,
+        "minilm": 81
+      },
+      "public_0016": {
+        "fts": 121,
+        "title": null,
+        "bm25s": null,
+        "fuzzy": null,
+        "minilm": null
+      },
+      "public_0017": {
+        "fts": null,
+        "title": null,
+        "bm25s": null,
+        "fuzzy": null,
+        "minilm": null
+      },
+      "public_0020": {
+        "fts": null,
+        "title": null,
+        "bm25s": null,
+        "fuzzy": null,
+        "minilm": 31
+      },
+      "public_0026": {
+        "fts": 27,
+        "title": null,
+        "bm25s": null,
+        "fuzzy": 1,
+        "minilm": null
+      },
+      "public_0028": {
+        "fts": null,
+        "title": 138,
+        "bm25s": null,
+        "fuzzy": null,
+        "minilm": 64
+      },
+      "public_0035": {
+        "fts": 78,
+        "title": null,
+        "bm25s": 2,
+        "fuzzy": null,
+        "minilm": null
+      },
+      "public_0038": {
+        "fts": 1,
+        "title": null,
+        "bm25s": 1,
+        "fuzzy": null,
+        "minilm": null
+      },
+      "public_0040": {
+        "fts": 128,
+        "title": null,
+        "bm25s": null,
+        "fuzzy": null,
+        "minilm": null
+      },
+      "public_0054": {
+        "fts": 27,
+        "title": null,
+        "bm25s": 17,
+        "fuzzy": null,
+        "minilm": null
+      },
+      "public_0064": {
+        "fts": 7,
+        "title": null,
+        "bm25s": 16,
+        "fuzzy": null,
+        "minilm": null
+      },
+      "public_0071": {
+        "fts": 40,
+        "title": null,
+        "bm25s": 170,
+        "fuzzy": null,
+        "minilm": 111
+      },
+      "public_0083": {
+        "fts": 120,
+        "title": null,
+        "bm25s": null,
+        "fuzzy": null,
+        "minilm": null
+      },
+      "public_0084": {
+        "fts": 1,
+        "title": null,
+        "bm25s": 39,
+        "fuzzy": null,
+        "minilm": null
+      },
+      "public_0092": {
+        "fts": 178,
+        "title": null,
+        "bm25s": null,
+        "fuzzy": null,
+        "minilm": null
+      },
+      "public_0094": {
+        "fts": 139,
+        "title": null,
+        "bm25s": null,
+        "fuzzy": null,
+        "minilm": null
+      },
+      "public_0096": {
+        "fts": null,
+        "title": null,
+        "bm25s": null,
+        "fuzzy": null,
+        "minilm": null
+      },
+      "public_0100": {
+        "fts": null,
+        "title": null,
+        "bm25s": null,
+        "fuzzy": 51,
+        "minilm": 14
+      },
+      "public_0115": {
+        "fts": 33,
+        "title": null,
+        "bm25s": null,
+        "fuzzy": null,
+        "minilm": 43
+      },
+      "public_0126": {
+        "fts": null,
+        "title": null,
+        "bm25s": null,
+        "fuzzy": null,
+        "minilm": 65
+      },
+      "public_0144": {
+        "fts": 94,
+        "title": null,
+        "bm25s": null,
+        "fuzzy": null,
+        "minilm": 130
+      },
+      "public_0145": {
+        "fts": 89,
+        "title": null,
+        "bm25s": 24,
+        "fuzzy": null,
+        "minilm": 89
+      },
+      "public_0169": {
+        "fts": null,
+        "title": null,
+        "bm25s": null,
+        "fuzzy": null,
+        "minilm": null
+      },
+      "public_0174": {
+        "fts": 136,
+        "title": null,
+        "bm25s": null,
+        "fuzzy": null,
+        "minilm": null
+      },
+      "public_0177": {
+        "fts": 68,
+        "title": null,
+        "bm25s": 84,
+        "fuzzy": null,
+        "minilm": 18
+      },
+      "public_0180": {
+        "fts": 179,
+        "title": null,
+        "bm25s": 19,
+        "fuzzy": null,
+        "minilm": null
+      },
+      "public_0183": {
+        "fts": 26,
+        "title": null,
+        "bm25s": null,
+        "fuzzy": null,
+        "minilm": null
+      },
+      "public_0187": {
+        "fts": null,
+        "title": null,
+        "bm25s": 178,
+        "fuzzy": null,
+        "minilm": 83
+      },
+      "public_0198": {
+        "fts": null,
+        "title": null,
+        "bm25s": null,
+        "fuzzy": null,
+        "minilm": null
+      }
+    }
+  },
+  "combos": [
+    {
+      "name": "baseline_fts",
+      "routes": "fts",
+      "reranker": "feature",
+      "retrieval_limit": 100,
+      "seconds": 291.75,
+      "hit_rate_at_10": 0.855,
+      "mrr": 0.557188,
+      "mttc": 5.185,
+      "efficiency": 0.5815,
+      "recommended_technical_score": 0.710956,
+      "scenario_metrics": {
+        "boundary": {
+          "sample_count": 10,
+          "hit_rate_at_10": 0.6,
+          "mrr": 0.391667,
+          "mttc": 7.1
+        },
+        "browsing": {
+          "sample_count": 80,
+          "hit_rate_at_10": 0.925,
+          "mrr": 0.580536,
+          "mttc": 4.9125
+        },
+        "buying": {
+          "sample_count": 80,
+          "hit_rate_at_10": 0.8875,
+          "mrr": 0.597073,
+          "mttc": 4.4375
+        },
+        "intent_override": {
+          "sample_count": 30,
+          "hit_rate_at_10": 0.666667,
+          "mrr": 0.443743,
+          "mttc": 7.266667
+        }
+      },
+      "recovered_misses": [],
+      "lost_hits": [],
+      "recovered_n": 0,
+      "lost_n": 0
+    },
+    {
+      "name": "fts_title",
+      "routes": "fts,title",
+      "reranker": "feature",
+      "retrieval_limit": 100,
+      "seconds": 285.3,
+      "hit_rate_at_10": 0.855,
+      "mrr": 0.546085,
+      "mttc": 5.225,
+      "efficiency": 0.5775,
+      "recommended_technical_score": 0.706825,
+      "scenario_metrics": {
+        "boundary": {
+          "sample_count": 10,
+          "hit_rate_at_10": 0.6,
+          "mrr": 0.311667,
+          "mttc": 7.0
+        },
+        "browsing": {
+          "sample_count": 80,
+          "hit_rate_at_10": 0.925,
+          "mrr": 0.570258,
+          "mttc": 4.9125
+        },
+        "buying": {
+          "sample_count": 80,
+          "hit_rate_at_10": 0.8875,
+          "mrr": 0.588447,
+          "mttc": 4.525
+        },
+        "intent_override": {
+          "sample_count": 30,
+          "hit_rate_at_10": 0.666667,
+          "mrr": 0.446799,
+          "mttc": 7.333333
+        }
+      },
+      "recovered_misses": [],
+      "lost_hits": [],
+      "recovered_n": 0,
+      "lost_n": 0
+    },
+    {
+      "name": "fts_k250",
+      "routes": "fts",
+      "reranker": "feature",
+      "retrieval_limit": 250,
+      "seconds": 252.05,
+      "hit_rate_at_10": 0.86,
+      "mrr": 0.550341,
+      "mttc": 5.1,
+      "efficiency": 0.59,
+      "recommended_technical_score": 0.713102,
+      "scenario_metrics": {
+        "boundary": {
+          "sample_count": 10,
+          "hit_rate_at_10": 0.6,
+          "mrr": 0.391667,
+          "mttc": 7.1
+        },
+        "browsing": {
+          "sample_count": 80,
+          "hit_rate_at_10": 0.9375,
+          "mrr": 0.57001,
+          "mttc": 4.7625
+        },
+        "buying": {
+          "sample_count": 80,
+          "hit_rate_at_10": 0.8875,
+          "mrr": 0.591121,
+          "mttc": 4.375
+        },
+        "intent_override": {
+          "sample_count": 30,
+          "hit_rate_at_10": 0.666667,
+          "mrr": 0.442037,
+          "mttc": 7.266667
+        }
+      },
+      "recovered_misses": [
+        "public_0092",
+        "public_0100"
+      ],
+      "lost_hits": [
+        "public_0087"
+      ],
+      "recovered_n": 2,
+      "lost_n": 1
+    },
+    {
+      "name": "fts_bm25s",
+      "routes": "fts,bm25s",
+      "reranker": "feature",
+      "retrieval_limit": 100,
+      "seconds": 256.68,
+      "hit_rate_at_10": 0.855,
+      "mrr": 0.544425,
+      "mttc": 5.13,
+      "efficiency": 0.587,
+      "recommended_technical_score": 0.708228,
+      "scenario_metrics": {
+        "boundary": {
+          "sample_count": 10,
+          "hit_rate_at_10": 0.6,
+          "mrr": 0.245,
+          "mttc": 7.0
+        },
+        "browsing": {
+          "sample_count": 80,
+          "hit_rate_at_10": 0.925,
+          "mrr": 0.574578,
+          "mttc": 4.925
+        },
+        "buying": {
+          "sample_count": 80,
+          "hit_rate_at_10": 0.9,
+          "mrr": 0.571156,
+          "mttc": 4.2375
+        },
+        "intent_override": {
+          "sample_count": 30,
+          "hit_rate_at_10": 0.633333,
+          "mrr": 0.49254,
+          "mttc": 7.433333
+        }
+      },
+      "recovered_misses": [
+        "public_0054"
+      ],
+      "lost_hits": [
+        "public_0052"
+      ],
+      "recovered_n": 1,
+      "lost_n": 1
+    },
+    {
+      "name": "fts_fuzzy",
+      "routes": "fts,fuzzy",
+      "reranker": "feature",
+      "retrieval_limit": 100,
+      "seconds": 287.8,
+      "hit_rate_at_10": 0.86,
+      "mrr": 0.544675,
+      "mttc": 5.075,
+      "efficiency": 0.5925,
+      "recommended_technical_score": 0.711903,
+      "scenario_metrics": {
+        "boundary": {
+          "sample_count": 10,
+          "hit_rate_at_10": 0.6,
+          "mrr": 0.325,
+          "mttc": 7.0
+        },
+        "browsing": {
+          "sample_count": 80,
+          "hit_rate_at_10": 0.925,
+          "mrr": 0.571156,
+          "mttc": 4.8625
+        },
+        "buying": {
+          "sample_count": 80,
+          "hit_rate_at_10": 0.9,
+          "mrr": 0.575531,
+          "mttc": 4.2125
+        },
+        "intent_override": {
+          "sample_count": 30,
+          "hit_rate_at_10": 0.666667,
+          "mrr": 0.465,
+          "mttc": 7.3
+        }
+      },
+      "recovered_misses": [
+        "public_0026"
+      ],
+      "lost_hits": [],
+      "recovered_n": 1,
+      "lost_n": 0
+    },
+    {
+      "name": "fts_title_bm25s_fuzzy",
+      "routes": "fts,title,bm25s,fuzzy",
+      "reranker": "feature",
+      "retrieval_limit": 100,
+      "seconds": 335.92,
+      "hit_rate_at_10": 0.855,
+      "mrr": 0.548952,
+      "mttc": 5.175,
+      "efficiency": 0.5825,
+      "recommended_technical_score": 0.708686,
+      "scenario_metrics": {
+        "boundary": {
+          "sample_count": 10,
+          "hit_rate_at_10": 0.6,
+          "mrr": 0.226667,
+          "mttc": 6.8
+        },
+        "browsing": {
+          "sample_count": 80,
+          "hit_rate_at_10": 0.9125,
+          "mrr": 0.594529,
+          "mttc": 5.0125
+        },
+        "buying": {
+          "sample_count": 80,
+          "hit_rate_at_10": 0.9,
+          "mrr": 0.581136,
+          "mttc": 4.3125
+        },
+        "intent_override": {
+          "sample_count": 30,
+          "hit_rate_at_10": 0.666667,
+          "mrr": 0.449021,
+          "mttc": 7.366667
+        }
+      },
+      "recovered_misses": [
+        "public_0054"
+      ],
+      "lost_hits": [
+        "public_0087"
+      ],
+      "recovered_n": 1,
+      "lost_n": 1
+    },
+    {
+      "name": "lex_k250",
+      "routes": "fts,title,bm25s,fuzzy",
+      "reranker": "feature",
+      "retrieval_limit": 250,
+      "seconds": 335.03,
+      "hit_rate_at_10": 0.875,
+      "mrr": 0.54955,
+      "mttc": 4.985,
+      "efficiency": 0.6015,
+      "recommended_technical_score": 0.722665,
+      "scenario_metrics": {
+        "boundary": {
+          "sample_count": 10,
+          "hit_rate_at_10": 0.6,
+          "mrr": 0.226667,
+          "mttc": 6.8
+        },
+        "browsing": {
+          "sample_count": 80,
+          "hit_rate_at_10": 0.9375,
+          "mrr": 0.580744,
+          "mttc": 4.775
+        },
+        "buying": {
+          "sample_count": 80,
+          "hit_rate_at_10": 0.9125,
+          "mrr": 0.59619,
+          "mttc": 4.15
+        },
+        "intent_override": {
+          "sample_count": 30,
+          "hit_rate_at_10": 0.7,
+          "mrr": 0.449616,
+          "mttc": 7.166667
+        }
+      },
+      "recovered_misses": [
+        "public_0026",
+        "public_0054",
+        "public_0064",
+        "public_0092",
+        "public_0100"
+      ],
+      "lost_hits": [
+        "public_0087"
+      ],
+      "recovered_n": 5,
+      "lost_n": 1
+    },
+    {
+      "name": "fts_minilm",
+      "routes": "fts,minilm",
+      "reranker": "feature",
+      "retrieval_limit": 100,
+      "seconds": 363.67,
+      "hit_rate_at_10": 0.85,
+      "mrr": 0.558645,
+      "mttc": 5.195,
+      "efficiency": 0.5805,
+      "recommended_technical_score": 0.708693,
+      "scenario_metrics": {
+        "boundary": {
+          "sample_count": 10,
+          "hit_rate_at_10": 0.6,
+          "mrr": 0.289286,
+          "mttc": 7.0
+        },
+        "browsing": {
+          "sample_count": 80,
+          "hit_rate_at_10": 0.925,
+          "mrr": 0.603016,
+          "mttc": 4.9125
+        },
+        "buying": {
+          "sample_count": 80,
+          "hit_rate_at_10": 0.8875,
+          "mrr": 0.586567,
+          "mttc": 4.4375
+        },
+        "intent_override": {
+          "sample_count": 30,
+          "hit_rate_at_10": 0.633333,
+          "mrr": 0.455648,
+          "mttc": 7.366667
+        }
+      },
+      "recovered_misses": [],
+      "lost_hits": [
+        "public_0052"
+      ],
+      "recovered_n": 0,
+      "lost_n": 1
+    }
+  ],
+  "seconds": 3195.33
+}
