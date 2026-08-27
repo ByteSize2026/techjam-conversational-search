@@ -89,3 +89,24 @@ Split the 1,025-line starter Agent into retrieval, deterministic ranking, and re
 ### Status
 
 [OK] **Completed**
+
+
+## Session 5: Provenance-aware scoped Intent Override
+
+**Date**: 2026-08-27
+**Task**: Provenance-aware scoped Intent Override
+**Branch**: `main`
+
+### Summary
+
+Implemented deterministic scoped Intent Override for LegacyAgent with query evidence provenance, hard override upgrades, epoch cleanup, active-only retrieval/ranking projections, diagnostics, regression coverage, and seed-2026 fixed-200 validation (score 0.863357; Override Hit 0.900). Independent Trellis check passed 109 tests.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `18e7d02` | (see git log) |
+
+### Status
+
+[OK] **Completed**
