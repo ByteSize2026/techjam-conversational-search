@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Official public-set eval for the contest-oriented agent variants.
+"""Public-200 eval for ContestAgent variants (default: PUBLIC).
 
-Runs in parallel with the retrieval-combo ablation: this script does not
-touch extra wheels, MiniLM, or FlashRank.  Default Agent behaviour used by
-unittest stays on the legacy pipeline.
+Writes results_contest_public.json when the public variant runs.
+``python -m evaluator.local_evaluator`` loads the same Agent.
 """
 
 from __future__ import annotations

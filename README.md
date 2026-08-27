@@ -1,5 +1,24 @@
 # TechJam Conversational E-Commerce Search Challenge
 
+ByteSize 小组叉。**`main` 的评分入口是 ContestAgent PUBLIC**（`starter.agent.Agent`）。组员 Qwen / 自适应召回实验在分支 **`legacy/qwen`**，不要在 `main` 上把 `Agent` 改回那套管道。
+
+| 分支 | `starter.agent.Agent` | 用途 |
+|---|---|---|
+| `main` | ContestAgent PUBLIC | 提交 / 公开集计分 |
+| `legacy/qwen` | 组员检索 + Qwen rerank | 实验，测试走这套 |
+
+本地公开 200（需 `data/catalog.jsonl`）：
+
+```bash
+python eval_contest.py --only public
+# 或
+python -m evaluator.local_evaluator
+```
+
+当前本地分数（0 token）：公开 200 Hit@10 **1.000** / 技术分 **0.9534**；自建 holdout 200 Hit **0.980** / **0.8888**。公开 0.95 **不能**当私有 800 的预测。说明见 `report/README.md`。
+
+---
+
 Build an AI shopping agent that asks useful follow-up questions and recommends the customer's hidden target product within at most 10 turns.
 
 ## What You Receive
@@ -130,8 +149,14 @@ docs/competition_specification.md participant rules and evaluation protocol
 docs/agent_api_contract.json      machine-readable Agent contract
 docs/evaluation_config.json       scoring configuration
 docs/baseline_results.json        reproducible weak-starter reference score
-starter/agent.py                  editable weak starter
+starter/agent.py                  Agent = ContestAgent PUBLIC; LegacyAgent = 组员旧管道
+starter/shopping_agent/contest_*.py  计分实现
 evaluator/local_evaluator.py      public-set simulator and scorer
+eval_contest.py                   公开 200 计分（写 results_contest_public.json）
+eval_holdout.py                   自建 holdout 200
+eval_shard.py                     随机 800 的单片评测
+report/                           方法、holdout、知识库结论
+holdout/                          自建测试集与对照 JSON（不是官方私有 800）
 ```
 
 ## Judging and Submission Policy

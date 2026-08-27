@@ -1,9 +1,8 @@
-"""Offline-first public facade for the shopping agent.
+"""Evaluator entry: ``Agent`` is ContestAgent PUBLIC.
 
-The facade owns the evaluator-facing session protocol and turn orchestration.
-Route retrieval, deterministic ranking, and response-boundary details live in
-the focused modules under :mod:`starter.shopping_agent` and are exposed here
-through small compatibility delegates for existing tests and tooling.
+``python -m evaluator.local_evaluator`` and ``eval_contest.py`` load this
+``Agent``. The Qwen / adaptive-recall pipeline is ``LegacyAgent`` and lives
+for tests; continue that experiment on branch ``legacy/qwen``.
 """
 
 from __future__ import annotations

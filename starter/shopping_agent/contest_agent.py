@@ -1,4 +1,9 @@
-"""Contest shopping agent: always ask `other`, category lock, optional gate."""
+"""Scored shopping agent: always ask ``other``, verbatim AND, popularity-first.
+
+``starter.agent.Agent`` subclasses this with ``PUBLIC``. Local numbers:
+public-200 Hit 1.000 / 0.9534; holdout-200 Hit 0.980 / 0.8888. Reports in
+``report/``.
+"""
 
 from __future__ import annotations
 
