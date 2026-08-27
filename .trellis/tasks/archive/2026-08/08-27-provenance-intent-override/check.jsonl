@@ -1,0 +1,4 @@
+{"file":".trellis/spec/agent/index.md","reason":"检查 Agent 接口、session 隔离与不可见数据边界"}
+{"file":".trellis/spec/agent/contract-and-state.md","reason":"检查 scoped/global override、epoch 与 active evidence"}
+{"file":".trellis/spec/evaluator/protocol-and-scoring.md","reason":"检查 evaluator 未修改且评测口径一致"}
+{"file":".trellis/spec/testing/index.md","reason":"检查 unittest 覆盖与全量回归"}

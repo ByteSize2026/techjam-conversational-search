@@ -1,0 +1,4 @@
+{"file":".trellis/spec/agent/contract-and-state.md","reason":"Agent session、Intent Override、epoch 与输出合同"}
+{"file":".trellis/spec/evaluator/protocol-and-scoring.md","reason":"Override 第 3/4 轮协议、命中限制与场景评分"}
+{"file":".trellis/spec/testing/unittest-fixtures.md","reason":"确定性状态与 evaluator 集成测试模式"}
+{"file":".trellis/spec/guides/change-impact.md","reason":"状态、检索、测试与评测的跨层影响"}
