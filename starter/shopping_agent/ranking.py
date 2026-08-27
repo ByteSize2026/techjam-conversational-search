@@ -335,7 +335,7 @@ class RankingEngine:
         input_candidates = list(candidates)
         if limit is not None:
             input_candidates = input_candidates[: max(int(limit), 0)]
-        query_terms = list(safe_terms(" ".join(state.query_terms)))
+        query_terms = list(safe_terms(" ".join(state.active_query_terms)))
         score_fn = lexical_rank if callable(lexical_rank) else lexical_rank_scores
         bm25_scores, title_scores = score_fn(input_candidates, query_terms)
         scored: list[tuple[float, int, RetrievedProduct]] = []

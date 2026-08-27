@@ -14,6 +14,9 @@ from starter.shopping_agent.policy import (
 )
 from starter.shopping_agent.state import (
     Constraint,
+    ConstraintMutation,
+    IntentUpdate,
+    QueryEvidence,
     SessionState,
     StateReducer,
     parse_intent_update,
@@ -182,6 +185,243 @@ class ExhaustionStateTests(unittest.TestCase):
         # next turn is blocked again.
         self.assertTrue(state.global_exhausted)
         self.assertIsNone(policy.choose_attribute(state, candidates, turn=4, remaining_turns=6))
+
+
+class ProvenanceOverrideTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.reducer = StateReducer()
+
+    def test_ordinary_initial_message_does_not_predict_override(self) -> None:
+        update = parse_intent_update("I'm looking for shirts. I prefer a relaxed fit.", turn=1)
+        self.assertFalse(update.override)
+        self.assertEqual(update.scope, "none")
+        self.assertEqual(update.query_evidence[0].kind, "initial")
+
+    def test_matching_override_upgrades_existing_constraint_and_evidence(self) -> None:
+        state = SessionState("s", category_anchor="shoes")
+        self.reducer.apply(
+            state,
+            parse_intent_update("For that, what matters is: leather.", turn=2),
+            turn=2,
+        )
+        self.assertEqual(state.active_constraints[0].hardness, "soft")
+
+        self.reducer.apply(
+            state,
+            parse_intent_update(
+                "Actually, ignore my earlier preference. What I need is: leather.",
+                turn=3,
+            ),
+            turn=3,
+        )
+
+        constraint = state.active_constraints[0]
+        self.assertEqual(constraint.normalized_value(), "leather")
+        self.assertEqual(constraint.hardness, "hard")
+        self.assertEqual(constraint.polarity, "prefer")
+        self.assertEqual(constraint.source, "rule")
+        self.assertEqual(constraint.disclosure_kind, "override")
+        self.assertEqual(constraint.epoch, 1)
+        evidence = state.active_query_evidence
+        self.assertEqual(len(evidence), 1)
+        self.assertEqual(evidence[0].text, "leather")
+        self.assertEqual(evidence[0].kind, "override")
+        self.assertEqual(evidence[0].epoch, 1)
+        self.assertEqual(evidence[0].turn, 3)
+
+    def test_payload_free_global_reset_does_not_create_feature_evidence(self) -> None:
+        state = SessionState("s", category_anchor="shoes")
+        self.reducer.apply(
+            state,
+            parse_intent_update("For that, what matters is: leather.", turn=1),
+            turn=1,
+        )
+        update = parse_intent_update("Start over.", turn=2)
+        self.assertEqual(update.scope, "global_reset")
+        self.assertEqual(update.mutations, ())
+        self.assertEqual(update.query_terms, ())
+        self.assertEqual(update.query_evidence, ())
+        self.reducer.apply(state, update, turn=2)
+        self.assertEqual(state.active_constraints, [])
+        self.assertEqual(state.active_query_evidence, [])
+        self.assertEqual(state.active_query_terms, [])
+        self.assertEqual(state.query_terms, [])
+
+        second = parse_intent_update("Forget everything.", turn=3)
+        self.assertEqual(second.scope, "global_reset")
+        self.assertEqual(second.mutations, ())
+        self.assertEqual(second.query_evidence, ())
+
+    def test_global_reset_clears_legacy_query_projection_without_evidence(self) -> None:
+        state = SessionState(
+            "legacy",
+            category_anchor="shoes",
+            query_terms=["legacy cotton"],
+        )
+        self.assertEqual(state.active_query_terms, ["legacy cotton"])
+        update = parse_intent_update("Start over.", turn=1)
+        self.reducer.apply(state, update, turn=1)
+        self.assertEqual(state.query_terms, [])
+        self.assertEqual(state.active_query_terms, [])
+
+    def test_actually_change_attribute_precedes_referenced_override(self) -> None:
+        state = SessionState("s", category_anchor="shirts")
+        # Use explicit initial evidence to verify that an unrelated provisional
+        # constraint/evidence survives the scoped color replacement.
+        self.reducer.apply(
+            state,
+            IntentUpdate(
+                mutations=(
+                    ConstraintMutation(
+                        action="upsert",
+                        attribute="material",
+                        value="cotton",
+                        hardness="soft",
+                        disclosure_kind="initial",
+                    ),
+                ),
+                query_evidence=(
+                    QueryEvidence(
+                        text="cotton",
+                        turn=1,
+                        kind="initial",
+                        attribute_hint="material",
+                    ),
+                ),
+            ),
+            turn=1,
+        )
+        self.reducer.apply(
+            state,
+            parse_intent_update("I'm looking for shirts. in red", turn=1),
+            turn=1,
+        )
+        update = parse_intent_update("Actually, change the color to blue.", turn=2)
+        self.assertEqual(update.scope, "attribute_replace")
+        self.reducer.apply(state, update, turn=2)
+        active = {(item.attribute, item.normalized_value()) for item in state.active_constraints}
+        self.assertIn(("material", "cotton"), active)
+        self.assertIn(("color", "blue"), active)
+        self.assertNotIn(("color", "red"), active)
+        self.assertIn("cotton", state.active_query_terms)
+        self.assertNotIn("red", " ".join(state.active_query_terms).lower())
+
+    def test_referenced_override_retires_provisional_and_carries_clarification(self) -> None:
+        state = SessionState("s", category_anchor="shirts")
+        self.reducer.apply(
+            state,
+            parse_intent_update("I'm looking for shirts. in red", turn=1),
+            turn=1,
+        )
+        self.reducer.apply(
+            state,
+            parse_intent_update("For that, what matters is: cotton; durable.", turn=2),
+            turn=2,
+        )
+        state.no_progress_streak = 3
+        state.ask_counts["color"] = 2
+        state.asked_attributes.append("color")
+        state.recommendations_by_epoch[0] = ["SEEN"]
+        state.softened_constraint_keys.add(("feature", "durable"))
+
+        self.reducer.apply(
+            state,
+            parse_intent_update(
+                "Actually, ignore my earlier preference. What I need is: leather.",
+                turn=3,
+            ),
+            turn=3,
+        )
+
+        active = {(item.attribute, item.normalized_value()) for item in state.active_constraints}
+        self.assertEqual(state.intent_epoch, 1)
+        self.assertIn(("material", "leather"), active)
+        self.assertNotIn(("color", "red"), active)
+        self.assertIn(("feature", "durable"), active)
+        self.assertEqual({item.epoch for item in state.active_constraints}, {1})
+        self.assertEqual(
+            [item.text for item in state.active_query_evidence],
+            ["durable", "leather"],
+        )
+        self.assertEqual(state.query_terms, ["durable", "leather"])
+        self.assertEqual(state.no_progress_streak, 0)
+        self.assertEqual(state.ask_counts, {})
+        self.assertEqual(state.recommendations_by_epoch[1], [])
+        self.assertEqual(
+            state.last_diagnostics["intent_scope"],
+            "referenced_preference_replace",
+        )
+        self.assertEqual(state.last_diagnostics["query_evidence_carry_forward_count"], 1)
+
+    def test_attribute_replacement_only_supersedes_same_attribute(self) -> None:
+        state = SessionState("s", category_anchor="shirts")
+        self.reducer.apply(
+            state,
+            parse_intent_update("For that, what matters is: color: red; cotton.", turn=1),
+            turn=1,
+        )
+        self.reducer.apply(
+            state,
+            parse_intent_update("Change the color to blue instead of red.", turn=2),
+            turn=2,
+        )
+        active = {(item.attribute, item.normalized_value()) for item in state.active_constraints}
+        self.assertEqual(state.intent_epoch, 1)
+        self.assertIn(("color", "blue"), active)
+        self.assertIn(("material", "cotton"), active)
+        self.assertNotIn(("color", "red"), active)
+        self.assertEqual(
+            [item.text for item in state.active_query_evidence],
+            ["cotton", "blue"],
+        )
+        self.assertEqual(state.last_diagnostics["intent_scope"], "attribute_replace")
+
+    def test_global_reset_is_explicit_and_clears_active_evidence(self) -> None:
+        state = SessionState("s", category_anchor="shirts")
+        self.reducer.apply(
+            state,
+            parse_intent_update("For that, what matters is: cotton; durable.", turn=1),
+            turn=1,
+        )
+        state.no_progress_streak = 2
+        state.recommendations_by_epoch[0] = ["SEEN"]
+        self.reducer.apply(
+            state,
+            parse_intent_update("Forget everything. What I need is: wool.", turn=2),
+            turn=2,
+        )
+        self.assertEqual(state.intent_epoch, 1)
+        self.assertEqual(state.category_anchor, "shirts")
+        self.assertEqual(
+            [(item.attribute, item.normalized_value()) for item in state.active_constraints],
+            [("material", "wool")],
+        )
+        self.assertEqual([item.text for item in state.active_query_evidence], ["wool"])
+        self.assertFalse(any(item.status == "active" for item in state.query_evidence if item.text in {"cotton", "durable"}))
+        self.assertEqual(state.no_progress_streak, 0)
+        self.assertEqual(state.recommendations_by_epoch[1], [])
+        self.assertEqual(state.last_diagnostics["intent_scope"], "global_reset")
+
+    def test_superseded_query_evidence_is_not_in_projection_or_fingerprint(self) -> None:
+        state = SessionState("s", category_anchor="shirts")
+        self.reducer.apply(
+            state,
+            parse_intent_update("I'm looking for shirts. old preference cotton", turn=1),
+            turn=1,
+        )
+        before = state.fingerprint()
+        self.reducer.apply(
+            state,
+            parse_intent_update(
+                "Actually, ignore my earlier preference. What I need is: leather.",
+                turn=2,
+            ),
+            turn=2,
+        )
+        self.assertNotEqual(before, state.fingerprint())
+        self.assertEqual(state.active_query_terms, ["leather"])
+        self.assertNotIn("old preference", " ".join(state.active_query_terms).lower())
+        self.assertTrue(any(item.status == "superseded" for item in state.query_evidence))
 
 
 class StructuredPoolTests(unittest.TestCase):

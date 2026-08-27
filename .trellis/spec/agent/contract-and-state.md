@@ -49,6 +49,70 @@ respond(self, session_id: str, user_message: str, turn: int, top_k: int) -> dict
 
 全局信息耗尽通常停止继续提问，但存在一个事件级例外：用户同时明确否定当前推荐并要求继续询问具体属性时，只允许当前轮临时绕过提问禁令。不得清除持久的 `global_exhausted`，提交策略仍应按耗尽状态返回可用推荐；临时问题必须排除 `other`、已耗尽/已问属性和当前意图已有约束的属性。下一轮若没有新的明确请求，应恢复全局耗尽行为。
 
+## Scenario: provenance-aware Intent Override
+
+### 1. Scope / Trigger
+
+当 `LegacyAgent` 收到明确的属性替换、“忽略早先偏好”或全局重置语言时，用 `IntentUpdate.scope` 驱动确定性状态迁移。首轮模板不得预测未来 Override；`ContestAgent` 不使用此内部合同。
+
+### 2. Signatures
+
+```python
+IntentScope = Literal[
+    "none", "attribute_replace", "referenced_preference_replace", "global_reset"
+]
+QueryEvidence(text, turn, epoch, kind, attribute_hint, confidence, status)
+parse_intent_update(message, *, turn=0) -> IntentUpdate
+StateReducer.apply(state, update, *, turn=0) -> SessionState
+SessionState.active_query_terms -> list[str]
+```
+
+### 3. Contracts
+
+- `attribute_replace` 只使同属性冲突值失效；与其它初始偏好兼容的约束仍 active。
+- `referenced_preference_replace` 使被指代的 initial provisional evidence 和同属性冲突值失效，保留兼容的 clarification evidence。
+- 新 X 必须是当前 epoch 的 hard override constraint。即使 X 早已作为 soft clarification 存在，重复 upsert 也必须升级其 hardness、turn、epoch 和 disclosure kind，并同步升级同文本 query evidence。
+- `global_reset` 清空所有 active constraint/query evidence 和旧 epoch 策略状态。无 payload 的 `Start over.` / `Forget everything.` 不得把命令本身当作 feature evidence。
+- retrieval、ranking、structured pool 和 fingerprint 只读 active projection；新 epoch 不继承 seen recommendation、rank stability、no-progress 或 ask/exhaustion penalty。
+
+### 4. Validation & Error Matrix
+
+| 输入/状态 | 必须的结果 |
+| --- | --- |
+| 普通首轮“I'm looking for X. old preference” | `scope=none`，不开新 epoch |
+| `Actually, change the color to blue.` | `attribute_replace`，只 supersede 旧 color |
+| X 已是 soft clarification，后续 override 仍要 X | 原约束和同文本 evidence 升级为 hard/current-epoch/override |
+| `Start over.` 且无新 payload | active constraints 和 active query terms 均为空 |
+| 未知或歧义句式 | 不做无依据 global wipe |
+
+### 5. Good/Base/Bad Cases
+
+- Good：初始 red，追问确认 durable，明确 override leather 后仅 red 失效，durable 保留，leather 为 hard。
+- Base：普通 clarification 在当前 epoch 累积 active evidence，不进行 scoped reset。
+- Bad：仅因首轮句式预测 Override；或认为“X 已出现过”就保留旧 soft provenance。
+
+### 6. Tests Required
+
+- 断言官方 referenced override 模板的 superseded/retained/added 状态、epoch 和 diagnostics。
+- 断言重复 X 会升级约束与 query evidence，而不是早退保留 soft。
+- 断言 payload-free global reset 不产生 mutation/query evidence。
+- 断言带 `Actually` 的单属性替换优先于宽泛 referenced-override 匹配。
+- 断言 superseded evidence 不进入 active projection/fingerprint，且两个 session 不串状态。
+
+### 7. Wrong vs Correct
+
+```python
+# Wrong: duplicate X keeps old soft clarification semantics.
+if duplicate is not None:
+    return
+
+# Correct: duplicate override X refreshes the complete current intent semantics.
+duplicate.hardness = incoming.hardness
+duplicate.turn = turn
+duplicate.epoch = state.intent_epoch
+duplicate.disclosure_kind = "override"
+```
+
 ## 实现反模式
 
 - 不修改 `evaluator/local_evaluator.py` 来适配 Agent；评估器是外部协议的执行者。

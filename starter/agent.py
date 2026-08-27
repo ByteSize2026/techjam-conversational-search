@@ -203,6 +203,7 @@ class LegacyAgent:
         old_epoch = state.intent_epoch
         update = parse_intent_update(message, turn=turn)
         self.reducer.apply(state, update, turn=turn)
+        intent_diagnostics = dict(state.last_diagnostics)
         # Capture the post-reducer intent before later diagnostics or ranking
         # stages mutate derived state (for example a softened pool key).
         intent_fingerprint = state.fingerprint()
@@ -353,6 +354,29 @@ class LegacyAgent:
             "turn": turn,
             "intent_epoch": state.intent_epoch,
             "epoch_changed": state.intent_epoch != old_epoch,
+            "intent_scope": intent_diagnostics.get("intent_scope", "none"),
+            "scope": intent_diagnostics.get("scope", "none"),
+            "added_constraint_keys": intent_diagnostics.get(
+                "added_constraint_keys", []
+            ),
+            "retained_constraint_keys": intent_diagnostics.get(
+                "retained_constraint_keys", []
+            ),
+            "superseded_constraint_keys": intent_diagnostics.get(
+                "superseded_constraint_keys", []
+            ),
+            "query_evidence_count": intent_diagnostics.get(
+                "query_evidence_count", len(state.query_evidence)
+            ),
+            "active_query_evidence_count": intent_diagnostics.get(
+                "active_query_evidence_count", len(state.active_query_evidence)
+            ),
+            "superseded_query_evidence_count": intent_diagnostics.get(
+                "superseded_query_evidence_count", 0
+            ),
+            "query_evidence_carry_forward_count": intent_diagnostics.get(
+                "query_evidence_carry_forward_count", 0
+            ),
             "route": route.mode,
             "route_reason": route.reason_code,
             "route_weights": {

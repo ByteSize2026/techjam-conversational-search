@@ -129,6 +129,15 @@ class AgentContractTests(unittest.TestCase):
         self.assertTrue(any(item.value.lower() == "leather" for item in state.active_constraints))
         self.assertFalse(any(item.value.lower() == "cotton" for item in state.active_constraints))
         self.assertEqual(state.recommendations_by_epoch.get(1), state.last_candidate_ids)
+        self.assertEqual(
+            agent.last_diagnostics["intent_scope"],
+            "referenced_preference_replace",
+        )
+        self.assertTrue(agent.last_diagnostics["epoch_changed"])
+        self.assertIn(
+            ["material", "leather"],
+            agent.last_diagnostics["added_constraint_keys"],
+        )
 
     def test_no_preference_attribute_is_not_asked_again(self) -> None:
         agent = Agent(self.catalog_path)

@@ -180,7 +180,7 @@ class RetrievalEngine:
                 ],
                 query_evidence=(
                     latest,
-                    *state.query_terms,
+                    *state.active_query_terms,
                     *(item.value for item in state.active_preferences),
                 ),
                 resolution=category_resolution,
@@ -231,10 +231,10 @@ class RetrievalEngine:
         if mode in {"browsing", "mixed"} and browsing_weight > 0.0:
             if latest.strip():
                 specs.append((latest, "latest", "browsing", browsing_weight, 0.65))
-            if state.query_terms:
+            if state.active_query_terms:
                 specs.append(
                     (
-                        " ".join(state.query_terms),
+                        " ".join(state.active_query_terms),
                         "accumulated",
                         "browsing",
                         browsing_weight,
