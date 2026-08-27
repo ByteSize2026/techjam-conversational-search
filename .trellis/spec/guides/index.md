@@ -6,6 +6,7 @@
 
 ## 真实来源
 
+- 总体目标、四大架构支柱、范围限制与评审维度：`docs/problem_statement.md`。
 - 实际数据流：`starter/agent.py`、`evaluator/local_evaluator.py`。
 - 数据与评分限制：`docs/competition_specification.md`、`docs/evaluation_config.json`、`data/README.md`。
 - 提交与网络限制：`docs/submission_rules.md`。

@@ -6,6 +6,7 @@
 
 ## 真实来源
 
+- Agent 总体能力目标与范围限制：`docs/problem_statement.md` 的四大架构支柱及 Constraints & Scope。
 - 接口与字段上限：`docs/agent_api_contract.json` 的 `reset_request`、`turn_request`、`turn_response`。
 - 当前基线与状态前置条件：`starter/agent.py` 的 `Agent.__init__`、`Agent.reset`、`Agent.respond`。
 - 实际调用顺序和异常处理：`evaluator/local_evaluator.py` 的 `evaluate`。
