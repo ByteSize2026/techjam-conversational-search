@@ -3,6 +3,7 @@ __pycache__/
 .DS_Store
 .env
 results.json
+.claude/worktrees/
 data/catalog.jsonl
 data/releases/
 data/.retrieval_cache/
@@ -11,6 +12,9 @@ SHA256SUMS
 # Organizer-only code, private evaluation data, manifests, and build reports.
 organizer/
 secure/
+holdout/
+report/
+techjam-colab-*.zip
 # Internal provenance and release-audit working documents.
 docs/audits/
 docs/data_selection_audit.md

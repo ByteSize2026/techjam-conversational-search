@@ -1,0 +1,5 @@
+{"file":".trellis/spec/agent/contract-and-state.md","reason":"检查架构文档是否准确描述正式接口、状态、组件和兼容边界。"}
+{"file":".trellis/spec/evaluator/protocol-and-scoring.md","reason":"检查 README 与开发文档没有误述计分、过滤和场景协议。"}
+{"file":".trellis/spec/testing/unittest-fixtures.md","reason":"检查测试说明、临时输出和离线 fixture 是否符合现有约定。"}
+{"file":".trellis/spec/data-contracts/jsonl-privacy-submission.md","reason":"检查 ignore、数据说明和公开/私有边界。"}
+{"file":".trellis/spec/guides/change-impact.md","reason":"检查文档所述修改影响面与真实跨层依赖一致。"}

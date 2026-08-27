@@ -1,0 +1,5 @@
+{"file":".trellis/spec/agent/index.md","reason":"核对唯一 Agent 入口、稳定合同和 shopping_agent 模块边界。"}
+{"file":".trellis/spec/evaluator/index.md","reason":"核对 evaluator 入口、评分职责与文档命令边界。"}
+{"file":".trellis/spec/testing/index.md","reason":"核对 unittest 与 tests/benchmarks 的既定位置和验证命令。"}
+{"file":".trellis/spec/data-contracts/index.md","reason":"核对公开数据、隐私、提交与本地产物边界。"}
+{"file":".trellis/spec/guides/offline-reproducibility.md","reason":"核对 catalog、离线评测、环境变量与复现说明。"}

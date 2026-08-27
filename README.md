@@ -1,171 +1,99 @@
-# TechJam Conversational E-Commerce Search Challenge
+# TechJam 多轮对话电商搜索
 
-ByteSize 小组叉。`starter.agent.Agent` 是唯一的正式入口，同时承载检索、会话状态、
-scoped Intent Override，以及可选的模型重排能力。官方 evaluator、单元测试和离线
-benchmark 使用同一个 Agent 实现。
+本项目实现一个多轮购物搜索 Agent：它根据匿名偏好和顾客消息维护会话意图，提出必要的
+澄清问题，并在最多 10 轮内返回冻结商品目录中的 Top 10 `parent_asin`。
 
-本地公开 200（需 `data/catalog.jsonl`）：
+正式入口只有 [`starter.agent.Agent`](starter/agent.py)。本地评估器、单元测试和离线
+benchmark 都使用这一实现。
 
-```bash
-python -m evaluator.local_evaluator
-```
+## 快速开始
 
----
+项目建议使用 Python 3.10 或更高版本。默认的确定性路径只依赖 Python 标准库，不需要
+API key 或网络连接。
 
-Build an AI shopping agent that asks useful follow-up questions and recommends the customer's hidden target product within at most 10 turns.
+### 1. 准备商品目录
 
-## What You Receive
-
-- A frozen catalog of 50,000 products from the `Clothing_Shoes_and_Jewelry` category of Amazon Reviews 2023.
-- 200 labeled public sessions for local development.
-- A weak BM25 starter agent and deterministic local evaluator.
-- The Agent API contract and scoring rules.
-
-The organizer keeps 800 additional sessions private for final evaluation.
-
-## Task
-
-For each session, your agent receives an anonymized preference profile and a short customer message. Raw user IDs, review text, timestamps, and purchase history are never disclosed. On every turn the agent may:
-
-- ask a natural clarification question in `message` and identify one requested field in `ask_attribute`;
-- return a ranked list of up to 10 catalog `parent_asin` values;
-- do both in the same response.
-
-The session ends when the target product appears in the scored Top 10 or after turn 10. Sessions cover Buying, Browsing, Intent Override, and Boundary behavior.
-
-## Download the Catalog
-
-Download `catalog.jsonl.gz` from the GitHub Release attached to this repository, then run:
+从仓库对应的 GitHub Release 下载 `catalog.jsonl.gz`，放到仓库根目录。可先查看摘要：
 
 ```bash
-gzip -dk catalog.jsonl.gz
-mv catalog.jsonl data/catalog.jsonl
+shasum -a 256 catalog.jsonl.gz
 ```
 
-Verify the downloaded file using the published `SHA256SUMS` file.
-
-## Run the Starter
-
-Python 3.10 or later is recommended. The starter uses only the Python standard library.
+结果应与 [`SHA256SUMS`](SHA256SUMS) 中的 `catalog.jsonl.gz` 一致。随后解压到 `data/`：
 
 ```bash
-python3 -m evaluator.local_evaluator
+gzip -dc catalog.jsonl.gz > data/catalog.jsonl
 ```
 
-Edit `starter/agent.py` to implement your system. Do not edit the evaluator or public labels when reporting your local score.
-The command writes per-session results and aggregate metrics to `results.json`.
+`data/catalog.jsonl` 是本地大文件，不纳入 Git。数据字段和隐私边界见
+[`data/README.md`](data/README.md)。
 
-The included weak BM25 starter scores Hit Rate@10 `0.125`, MRR `0.068034`, and
-MTTC `9.81` on the released public set. See `docs/baseline_results.json`.
+### 2. 运行回归测试
 
-## Agent Interface
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+测试使用临时小型 catalog，不要求提前下载完整商品目录，也不访问网络。
+
+### 3. 运行公开集评测
+
+```bash
+python3 -m evaluator.local_evaluator \
+  --catalog data/catalog.jsonl \
+  --dataset data/public_set.jsonl \
+  --output results.json
+```
+
+`results.json` 是本地产物，已被 Git 忽略。指标定义和结果解释见
+[本地开发与评测](docs/development/local-evaluation.md)。
+
+## 核心接口
+
+评估器会为每个会话先调用 `reset`，再逐轮调用 `respond`：
 
 ```python
 class Agent:
     def reset(self, session_id: str, user_profile: dict) -> None:
         ...
 
-    def respond(self, session_id: str, user_message: str, turn: int, top_k: int) -> dict:
-        return {
-            "message": "Do you have a material preference?",
-            "ask_attribute": "material",
-            "recommendations": [
-                {"parent_asin": "B000..."},
-                {"parent_asin": "B001..."}
-            ],
-            "usage": {"prompt_tokens": 120, "completion_tokens": 30}
-        }
+    def respond(
+        self,
+        session_id: str,
+        user_message: str,
+        turn: int,
+        top_k: int,
+    ) -> dict:
+        ...
 ```
 
-`ask_attribute` is one of `category`, `material`, `color`, `size`, `style`, `brand`, `budget`, `feature`, `use_case`, `other`, or `null`. See `docs/agent_api_contract.json`.
+请求、响应字段和枚举以 [`docs/agent_api_contract.json`](docs/agent_api_contract.json)
+为准。系统如何从会话状态走到最终响应，见[系统架构](docs/architecture.md)。
 
-## Technical Metrics
+## 文档导航
 
-- **Hit Rate@10:** fraction of sessions that find the target within 10 turns.
-- **MRR:** mean reciprocal rank of the target; a miss contributes zero.
-- **MTTC:** mean first-hit turn; a miss is assigned turn 11.
-- **Reported token usage:** prompt and completion tokens returned by the team's model client.
+- [文档总览](docs/README.md)：按教程、操作指南、架构解释和公开参考查找文档。
+- [系统架构](docs/architecture.md)：模块职责、每轮数据流和稳定边界。
+- [本地开发与评测](docs/development/local-evaluation.md)：catalog、测试、评测和常见问题。
+- [可选模型后端](docs/development/model-backends.md)：DeepSeek、本地兼容端点、Qwen 和回退。
+- [离线 benchmark](docs/development/benchmarks.md)：adaptive recall 与 Qwen 实验工具。
+- [Competition Specification](docs/competition_specification.md)：公开比赛协议与评分说明（英文）。
+- [Submission Rules](docs/submission_rules.md)：公开提交要求（英文）。
+
+[`docs/baseline_results.json`](docs/baseline_results.json) 保存的是已发布 weak starter 的
+历史参考成绩，不代表当前持续演进的 `Agent` 实时成绩。
+
+## 仓库结构
 
 ```text
-TechnicalScore = 0.50 × HitRate@10 + 0.30 × MRR + 0.20 × Efficiency
-Efficiency = clip((11 - MTTC) / 10, 0, 1)
+starter/                 正式 Agent 入口与购物搜索组件
+evaluator/               公开集模拟与评分
+tests/                   unittest 回归
+tests/benchmarks/        离线诊断与模型 benchmark
+data/                    公开开发集与本地 catalog
+docs/                    架构、开发指南与公开合同
+notebooks/               可选实验 notebook
 ```
 
-Only exact `parent_asin` equality produces a hit. Core metrics are also reported by scenario.
-
-## Model Choice and Cost
-
-Teams may use any legally accessible LLM API or local model. Teams manage their own credentials and must never commit API keys. Model choice, estimated cost, token usage, and latency must be disclosed. Token usage is a feasibility metric, not part of the core technical score. The organizer does not provide or reimburse model API credits; teams are responsible for any costs incurred through optional external services.
-
-### Optional Tiered Model Backend
-
-The optional model-assisted path is explicitly tiered and remains usable offline:
-
-```text
-DeepSeek API -> local OpenAI-compatible endpoint -> deterministic fallback
-```
-
-With no relevant environment variables, no model backend is constructed and no network request is made. The deterministic path still returns catalog-valid recommendations. If a configured backend times out, returns an HTTP/JSON/schema error, or fails validation, the next tier is attempted; the semantic ranker then repairs invalid, duplicate, unknown, or omitted IDs using the original deterministic candidate order.
-
-Supported environment variables are:
-
-```text
-SHOPPING_AGENT_DEEPSEEK_API_KEY       # enables the DeepSeek tier
-SHOPPING_AGENT_DEEPSEEK_BASE_URL      # default: https://api.deepseek.com
-SHOPPING_AGENT_DEEPSEEK_MODEL         # default: deepseek-v4-flash
-SHOPPING_AGENT_LOCAL_BASE_URL         # enables local tier when paired with LOCAL_MODEL
-SHOPPING_AGENT_LOCAL_MODEL            # model name sent to the local endpoint
-SHOPPING_AGENT_LOCAL_API_KEY          # optional Authorization token for local servers
-SHOPPING_AGENT_MODEL_TIMEOUT_SECONDS  # per-request hard timeout; default: 8
-SHOPPING_AGENT_MODEL_CANDIDATE_LIMIT  # semantic-ranker candidate cap; default: 30
-SHOPPING_AGENT_CANDIDATE_LIMIT        # compatibility alias for the previous setting
-SHOPPING_AGENT_RETRIEVAL_LIMIT        # retrieval budget; default: 100
-SHOPPING_AGENT_MODEL_MAX_TOKENS       # completion cap; default: 512
-SHOPPING_AGENT_MODEL_TEMPERATURE      # default: 0
-```
-
-Both `SHOPPING_AGENT_LOCAL_BASE_URL` and `SHOPPING_AGENT_LOCAL_MODEL` must be set to enable the local tier. A local server only needs to expose an OpenAI-compatible `POST /chat/completions` endpoint; for example:
-
-```bash
-export SHOPPING_AGENT_LOCAL_BASE_URL=http://127.0.0.1:8000/v1
-export SHOPPING_AGENT_LOCAL_MODEL=my-local-model
-python3 -m evaluator.local_evaluator
-```
-
-This example intentionally does not prescribe a checkpoint or server launch command. Token usage is reported only when the successful backend supplies valid non-negative `prompt_tokens` and `completion_tokens`; failed tiers never contribute usage. Browsing currently uses the broad lexical plus category-diversity fallback. A dense route will be enabled only after frozen assets pass the documented resource and candidate-recall gates.
-
-## Files
-
-```text
-data/public_set.jsonl             200 labeled development sessions
-docs/competition_specification.md participant rules and evaluation protocol
-docs/agent_api_contract.json      machine-readable Agent contract
-docs/evaluation_config.json       scoring configuration
-docs/baseline_results.json        reproducible weak-starter reference score
-starter/agent.py                  唯一的 Agent 入口与整轮编排
-starter/shopping_agent/            检索、状态、排序、响应和模型适配组件
-evaluator/local_evaluator.py      public-set simulator and scorer
-tests/                            标准库 unittest 回归
-tests/benchmarks/adaptive_recall.py  自适应召回诊断
-tests/benchmarks/qwen_reranker.py   Qwen 离线 benchmark
-```
-
-Benchmark 工具从仓库根目录以模块方式调用，例如：
-
-```bash
-python -m tests.benchmarks.adaptive_recall --help
-python -m tests.benchmarks.qwen_reranker --help
-```
-
-## Judging and Submission Policy
-
-- Participant submission requirements: `docs/submission_rules.md`
-- Participant release checklist: `docs/participant_release_checklist.md`
-- Organizer-only final judging controls: `organizer/JUDGING_RUNBOOK.md`
-- Organizer private release checklist: `organizer/private_release_checklist.md`
-- Judging day operations SOP: `organizer/JUDGING_DAY_SOP.md`
-
-## Data Source
-
-The catalog and sessions are derived from Amazon Reviews 2023 by McAuley Lab, UCSD. See `DATA_ATTRIBUTION.md` before using or redistributing the data.
-Sessions are sampled deterministically from the official Clothing 5-core leave-last-out split and joined to the frozen catalog.
+公开集和商品目录派生自 Amazon Reviews 2023。使用或再分发前请阅读
+[`DATA_ATTRIBUTION.md`](DATA_ATTRIBUTION.md)。
