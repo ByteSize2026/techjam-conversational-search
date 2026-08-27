@@ -110,3 +110,24 @@ Implemented deterministic scoped Intent Override for LegacyAgent with query evid
 ### Status
 
 [OK] **Completed**
+
+
+## Session 6: Restore single Agent and consolidate benchmarks
+
+**Date**: 2026-08-28
+**Task**: Restore single Agent and consolidate benchmarks
+**Branch**: `main`
+
+### Summary
+
+Restored the original retrieval/state pipeline as the only starter.agent.Agent, removed ContestAgent and tracked contest/holdout/report/result artifacts, deleted the DeepSeek parallel runner, and moved Qwen/adaptive recall tools into tests.benchmarks. Validation: independent review PASS, unittest 92/92, public-200 Hit@10 1.000000, MRR 0.805024, MTTC 3.005000, technical score 0.901407, token usage 0.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `04699f4` | (see git log) |
+
+### Status
+
+[OK] **Completed**

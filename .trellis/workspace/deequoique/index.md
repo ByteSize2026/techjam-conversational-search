@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 5
-- **Last Active**: 2026-08-27
+- **Total Sessions**: 6
+- **Last Active**: 2026-08-28
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~112 | Active |
+| `journal-1.md` | ~133 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 6 | 2026-08-28 | Restore single Agent and consolidate benchmarks | `04699f4` | `main` |
 | 5 | 2026-08-27 | Provenance-aware scoped Intent Override | `18e7d02` | `main` |
 | 4 | 2026-08-27 | Refactor shopping agent into focused modules | `b3d5ab7` | `main` |
 | 3 | 2026-08-27 | Deterministic dialogue ranking and exhausted reopen | `a9ed63f` | `main` |
