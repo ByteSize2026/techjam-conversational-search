@@ -841,6 +841,59 @@ class CatalogRepository:
             for index, record in enumerate(self.popular(bounded_limit), 1)
         ]
 
+    def search_column_with_scores(
+        self,
+        query: object,
+        column: str = "title",
+        limit: int = 100,
+        *,
+        source: str | None = None,
+    ) -> list[RetrievedProduct]:
+        """FTS5 column MATCH without popularity fallback.
+
+        Extra recall routes should return empty rather than injecting popular
+        items that never matched the query.  Unknown column names fall back
+        to title.
+        """
+
+        bounded_limit = max(int(limit), 0)
+        if bounded_limit <= 0:
+            return []
+        allowed = {
+            "title",
+            "categories",
+            "features",
+            "details",
+            "store",
+            "description",
+            "canonical_text",
+        }
+        if column not in allowed:
+            column = "title"
+        terms = safe_terms(query)
+        if not terms:
+            return []
+        expression = " OR ".join(f'{column}:"{token}"' for token in terms)
+        labeled = source or column
+        try:
+            rows = self.connection.execute(
+                "SELECT rowid, parent_asin, bm25(products) AS rank_score "
+                "FROM products WHERE products MATCH ? "
+                "ORDER BY rank_score ASC, rowid ASC LIMIT ?",
+                (expression, bounded_limit),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            rows = []
+        results: list[RetrievedProduct] = []
+        for index, row in enumerate(rows, 1):
+            product = self._row_product(row)
+            if product is None:
+                continue
+            raw_score = row["rank_score"]
+            score = -float(raw_score) if isinstance(raw_score, (int, float)) else 0.0
+            results.append(RetrievedProduct(product, score, labeled, index))
+        return results
+
     def search(
         self,
         query: object,

@@ -6,7 +6,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from starter.agent import Agent
+from starter.agent import LegacyAgent as Agent
 from starter.shopping_agent import AgentConfig, QwenCrossEncoderReranker
 from starter.shopping_agent.catalog import CatalogRepository
 from starter.shopping_agent.policy import CandidateGateDecision

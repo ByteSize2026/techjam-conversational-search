@@ -50,7 +50,7 @@ def _ensure_repo_on_path() -> None:
 # importing the submission Agent so this diagnostic is importable both as a
 # script and as ``scripts.diagnose_adaptive_recall`` in unit tests.
 _ensure_repo_on_path()
-from starter.agent import Agent
+from starter.agent import LegacyAgent as Agent
 
 
 def _read_jsonl(path: str | Path) -> list[dict[str, object]]:

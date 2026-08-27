@@ -8,7 +8,9 @@ from unittest.mock import patch
 from starter.shopping_agent import (
     AgentConfig,
     BackendResponse,
+    DeepSeekAPIBackend,
     LLMSemanticRanker,
+    LocalOpenAIBackend,
     TieredModelClient,
 )
 
@@ -135,6 +137,61 @@ class ModelFallbackTests(unittest.TestCase):
         self.assertEqual(result.backend, "deepseek-api")
         self.assertEqual(result.usage, {"prompt_tokens": 9, "completion_tokens": 4})
         self.assertEqual(backend.calls, 1)
+
+    def test_ranker_accepts_products_list_schema(self):
+        backend = _FakeBackend(
+            "local-model",
+            BackendResponse(
+                content=json.dumps(
+                    {
+                        "products": [
+                            {"parent_asin": "C", "title": "third"},
+                            {"parent_asin": "A", "title": "first"},
+                        ]
+                    }
+                ),
+                usage={"prompt_tokens": 3, "completion_tokens": 2},
+            ),
+        )
+        ranker = LLMSemanticRanker(TieredModelClient([backend]), candidate_limit=3)
+        candidates = [_Candidate("A", "first"), _Candidate("B", "second"), _Candidate("C", "third")]
+        result = ranker.rank("shoes", candidates)
+        self.assertEqual(result.ordered_parent_asins, ("C", "A", "B"))
+        self.assertEqual(result.backend, "local-model")
+
+    def test_empty_content_uses_reasoning_content(self):
+        from starter.shopping_agent.model import _decode_json, _response_content
+
+        content, _usage = _response_content(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "reasoning_content": '{"ranked_parent_asins":["A"]}',
+                        }
+                    }
+                ],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 2},
+            }
+        )
+        self.assertEqual(_decode_json(content), {"ranked_parent_asins": ["A"]})
+
+    def test_decode_json_extracts_object_from_prose(self):
+        from starter.shopping_agent.model import _decode_json
+
+        decoded = _decode_json('Sure.\n{"ranked_parent_asins":["B","A"],"scores":{"B":1}}\n')
+        self.assertEqual(decoded["ranked_parent_asins"], ["B", "A"])
+
+    def test_deepseek_payload_disables_thinking_and_forces_json(self):
+        extra = DeepSeekAPIBackend("sk-test")._extra_body()
+        self.assertEqual(extra["thinking"], {"type": "disabled"})
+        self.assertEqual(extra["response_format"], {"type": "json_object"})
+
+    def test_local_payload_forces_json_object(self):
+        extra = LocalOpenAIBackend("http://127.0.0.1:11434/v1", "qwen2.5:3b")._extra_body()
+        self.assertEqual(extra["response_format"], {"type": "json_object"})
 
 
 if __name__ == "__main__":

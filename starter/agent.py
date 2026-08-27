@@ -1,9 +1,8 @@
-"""Offline-first public facade for the shopping agent.
+"""Evaluator entry: ``Agent`` is ContestAgent PUBLIC.
 
-The facade owns the evaluator-facing session protocol and turn orchestration.
-Route retrieval, deterministic ranking, and response-boundary details live in
-the focused modules under :mod:`starter.shopping_agent` and are exposed here
-through small compatibility delegates for existing tests and tooling.
+``python -m evaluator.local_evaluator`` and ``eval_contest.py`` load this
+``Agent``. The Qwen / adaptive-recall pipeline is ``LegacyAgent`` and lives
+for tests; continue that experiment on branch ``legacy/qwen``.
 """
 
 from __future__ import annotations
@@ -64,7 +63,7 @@ from .shopping_agent.state import (
 from .shopping_agent.structured_pool import StructuredCandidatePool
 
 
-class Agent:
+class LegacyAgent:
     """Stateful, deterministic retrieval pipeline with optional LLM reranking."""
 
     def __init__(
@@ -554,4 +553,15 @@ class Agent:
         return response_message(attribute, over_general)
 
 
-__all__ = ["Agent"]
+from .shopping_agent.contest_agent import ContestAgent
+from .shopping_agent.contest_config import PUBLIC
+
+
+class Agent(ContestAgent):
+    """Official scored agent loaded by evaluator.local_evaluator."""
+
+    def __init__(self, catalog_path: str | Path = "data/catalog.jsonl", **_kwargs) -> None:
+        super().__init__(catalog_path, config=PUBLIC)
+
+
+__all__ = ["Agent", "LegacyAgent"]

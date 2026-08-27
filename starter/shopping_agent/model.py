@@ -207,8 +207,12 @@ def _response_content(response: object) -> tuple[object, object | None]:
             choice = choices[0]
             if isinstance(choice, Mapping):
                 message = choice.get("message")
-                if isinstance(message, Mapping) and "content" in message:
-                    return message["content"], usage
+                if isinstance(message, Mapping):
+                    content = message.get("content")
+                    if content in (None, ""):
+                        content = message.get("reasoning_content")
+                    if content not in (None, ""):
+                        return content, usage
                 if "text" in choice:
                     return choice["text"], usage
                 if "content" in choice:
@@ -243,6 +247,47 @@ def _response_content(response: object) -> tuple[object, object | None]:
 _FENCE_RE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.IGNORECASE | re.DOTALL)
 
 
+def _extract_json_blob(text: str) -> object | None:
+    """Pull the first JSON object/array out of surrounding model prose."""
+
+    start = None
+    opener = None
+    for index, char in enumerate(text):
+        if char in "{[":
+            start = index
+            opener = char
+            break
+    if start is None or opener is None:
+        return None
+    closer = "}" if opener == "{" else "]"
+    depth = 0
+    in_string = False
+    escape = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+            continue
+        if char == opener:
+            depth += 1
+        elif char == closer:
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(text[start : index + 1])
+                except json.JSONDecodeError:
+                    return None
+    return None
+
+
 def _decode_json(content: object) -> object:
     """Decode model content, accepting a fenced JSON response."""
 
@@ -261,8 +306,11 @@ def _decode_json(content: object) -> object:
             raise BackendJSONError("model content is empty")
         try:
             return json.loads(text)
-        except json.JSONDecodeError as exc:
-            raise BackendJSONError(f"invalid model JSON: {exc.msg}") from exc
+        except json.JSONDecodeError:
+            extracted = _extract_json_blob(text)
+            if extracted is not None:
+                return extracted
+            raise BackendJSONError("invalid model JSON: no JSON object in content") from None
 
     # OpenAI-compatible servers sometimes expose structured text blocks.
     if isinstance(content, list) and content and all(
@@ -371,7 +419,7 @@ class OpenAICompatibleBackend:
         messages: Sequence[Mapping[str, str]],
         *,
         temperature: float = 0.0,
-        max_tokens: int = 512,
+        max_tokens: int = 1536,
     ) -> BackendResponse:
         payload = {
             "model": self.model,
@@ -379,6 +427,7 @@ class OpenAICompatibleBackend:
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        payload.update(self._extra_body())
         request = urllib_request.Request(
             self.endpoint,
             data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
@@ -418,6 +467,11 @@ class OpenAICompatibleBackend:
     # ``request`` is a useful alias for small integrations and fake servers.
     request = complete
 
+    def _extra_body(self) -> dict[str, object]:
+        """Backend-specific chat.completions fields. Default is OpenAI-plain."""
+
+        return {}
+
     def _headers(self) -> dict[str, str]:
         headers = {
             "Content-Type": "application/json",
@@ -449,6 +503,14 @@ class DeepSeekAPIBackend(OpenAICompatibleBackend):
             name="deepseek-api",
         )
 
+    def _extra_body(self) -> dict[str, object]:
+        # v4-flash thinks by default; reasoning can consume max_tokens and
+        # leave message.content empty. Ranking only needs a JSON object.
+        return {
+            "response_format": {"type": "json_object"},
+            "thinking": {"type": "disabled"},
+        }
+
 
 class LocalOpenAIBackend(OpenAICompatibleBackend):
     """An explicitly configured local OpenAI-compatible model server."""
@@ -471,6 +533,11 @@ class LocalOpenAIBackend(OpenAICompatibleBackend):
             name="local-model",
         )
 
+    def _extra_body(self) -> dict[str, object]:
+        # Small local models (e.g. Qwen2.5-3B) ignore "JSON only" prose
+        # unless the OpenAI-compatible server forces json_object.
+        return {"response_format": {"type": "json_object"}}
+
 
 # Concise aliases used by some callers/documentation.
 DeepSeekBackend = DeepSeekAPIBackend
@@ -490,7 +557,7 @@ class TieredModelClient:
         backends: Sequence[object] | None = None,
         *,
         timeout_seconds: float = 8.0,
-        max_tokens: int = 512,
+        max_tokens: int = 1536,
         temperature: float = 0.0,
     ) -> None:
         self.backends = tuple(backends or ())

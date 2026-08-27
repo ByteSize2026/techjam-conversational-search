@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from starter.shopping_agent.catalog import CatalogRepository
-from starter.agent import Agent
+from starter.agent import LegacyAgent as Agent
 from starter.shopping_agent.config import AgentConfig
 from starter.shopping_agent.catalog import RetrievedProduct
 from starter.shopping_agent.policy import (
