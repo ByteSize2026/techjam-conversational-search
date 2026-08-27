@@ -1,8 +1,8 @@
-"""Evaluator entry: ``Agent`` is ContestAgent PUBLIC.
+"""Official evaluator entry and stateful shopping-agent pipeline.
 
-``python -m evaluator.local_evaluator`` and ``eval_contest.py`` load this
-``Agent``. The Qwen / adaptive-recall pipeline is ``LegacyAgent`` and lives
-for tests; continue that experiment on branch ``legacy/qwen``.
+``python -m evaluator.local_evaluator`` loads this ``Agent``.  The same class
+is also the dependency-injection boundary used by the offline tests and
+Qwen/adaptive-recall benchmarks.
 """
 
 from __future__ import annotations
@@ -63,7 +63,7 @@ from .shopping_agent.state import (
 from .shopping_agent.structured_pool import StructuredCandidatePool
 
 
-class LegacyAgent:
+class Agent:
     """Stateful, deterministic retrieval pipeline with optional LLM reranking."""
 
     def __init__(
@@ -576,16 +576,4 @@ class LegacyAgent:
     def _message(attribute: str | None, over_general: bool) -> str:
         return response_message(attribute, over_general)
 
-
-from .shopping_agent.contest_agent import ContestAgent
-from .shopping_agent.contest_config import PUBLIC
-
-
-class Agent(ContestAgent):
-    """Official scored agent loaded by evaluator.local_evaluator."""
-
-    def __init__(self, catalog_path: str | Path = "data/catalog.jsonl", **_kwargs) -> None:
-        super().__init__(catalog_path, config=PUBLIC)
-
-
-__all__ = ["Agent", "LegacyAgent"]
+__all__ = ["Agent"]

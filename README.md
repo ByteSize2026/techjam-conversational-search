@@ -1,21 +1,14 @@
 # TechJam Conversational E-Commerce Search Challenge
 
-ByteSize 小组叉。**`main` 的评分入口是 ContestAgent PUBLIC**（`starter.agent.Agent`）。组员 Qwen / 自适应召回实验在分支 **`legacy/qwen`**，不要在 `main` 上把 `Agent` 改回那套管道。
-
-| 分支 | `starter.agent.Agent` | 用途 |
-|---|---|---|
-| `main` | ContestAgent PUBLIC | 提交 / 公开集计分 |
-| `legacy/qwen` | 组员检索 + Qwen rerank | 实验，测试走这套 |
+ByteSize 小组叉。`starter.agent.Agent` 是唯一的正式入口，同时承载检索、会话状态、
+scoped Intent Override，以及可选的模型重排能力。官方 evaluator、单元测试和离线
+benchmark 使用同一个 Agent 实现。
 
 本地公开 200（需 `data/catalog.jsonl`）：
 
 ```bash
-python eval_contest.py --only public
-# 或
 python -m evaluator.local_evaluator
 ```
-
-当前本地分数（0 token）：公开 200 Hit@10 **1.000** / 技术分 **0.9534**；自建 holdout 200 Hit **0.980** / **0.8888**。公开 0.95 **不能**当私有 800 的预测。说明见 `report/README.md`。
 
 ---
 
@@ -149,14 +142,19 @@ docs/competition_specification.md participant rules and evaluation protocol
 docs/agent_api_contract.json      machine-readable Agent contract
 docs/evaluation_config.json       scoring configuration
 docs/baseline_results.json        reproducible weak-starter reference score
-starter/agent.py                  Agent = ContestAgent PUBLIC; LegacyAgent = 组员旧管道
-starter/shopping_agent/contest_*.py  计分实现
+starter/agent.py                  唯一的 Agent 入口与整轮编排
+starter/shopping_agent/            检索、状态、排序、响应和模型适配组件
 evaluator/local_evaluator.py      public-set simulator and scorer
-eval_contest.py                   公开 200 计分（写 results_contest_public.json）
-eval_holdout.py                   自建 holdout 200
-eval_shard.py                     随机 800 的单片评测
-report/                           方法、holdout、知识库结论
-holdout/                          自建测试集与对照 JSON（不是官方私有 800）
+tests/                            标准库 unittest 回归
+tests/benchmarks/adaptive_recall.py  自适应召回诊断
+tests/benchmarks/qwen_reranker.py   Qwen 离线 benchmark
+```
+
+Benchmark 工具从仓库根目录以模块方式调用，例如：
+
+```bash
+python -m tests.benchmarks.adaptive_recall --help
+python -m tests.benchmarks.qwen_reranker --help
 ```
 
 ## Judging and Submission Policy

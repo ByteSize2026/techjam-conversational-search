@@ -9,7 +9,7 @@ solely to calculate recall metrics.
 
 Example::
 
-    python3 scripts/diagnose_adaptive_recall.py \
+    python3 -m tests.benchmarks.adaptive_recall \
       --catalog data/catalog.jsonl \
       --public-set data/public_set.jsonl \
       --sample-limit 5 \
@@ -36,7 +36,7 @@ MAX_TURNS = 10
 
 
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[1]
+    return Path(__file__).resolve().parents[2]
 
 
 def _ensure_repo_on_path() -> None:
@@ -45,12 +45,11 @@ def _ensure_repo_on_path() -> None:
         sys.path.insert(0, root)
 
 
-# ``python scripts/diagnose_adaptive_recall.py`` places ``scripts`` (rather
-# than the repository root) first on ``sys.path``.  Add the root before
-# importing the submission Agent so this diagnostic is importable both as a
-# script and as ``scripts.diagnose_adaptive_recall`` in unit tests.
+# When invoked as a module, Python starts with the repository root on
+# ``sys.path``.  Keep the explicit guard so direct execution from the moved
+# file remains supported as well.
 _ensure_repo_on_path()
-from starter.agent import LegacyAgent as Agent
+from starter.agent import Agent
 
 
 def _read_jsonl(path: str | Path) -> list[dict[str, object]]:

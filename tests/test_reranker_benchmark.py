@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from scripts.benchmark_qwen_reranker import (
+from tests.benchmarks.qwen_reranker import (
     FROZEN_TRACE_SCHEMA_VERSION,
     FrozenTraceMismatch,
     _FrozenTraceAgent,
@@ -564,7 +564,7 @@ class RerankerBenchmarkTest(unittest.TestCase):
             self.assertTrue(benchmark["resource"]["external_asset_path_exists"])
 
     def test_rerank_defaults_to_validation_and_requires_manifest_for_named_split(self) -> None:
-        parser = __import__("scripts.benchmark_qwen_reranker", fromlist=["_parser"])._parser()
+        parser = __import__("tests.benchmarks.qwen_reranker", fromlist=["_parser"])._parser()
         args = parser.parse_args(
             [
                 "rerank",
@@ -580,7 +580,7 @@ class RerankerBenchmarkTest(unittest.TestCase):
         self.assertEqual(args.candidate_limit, 30)
 
         with self.assertRaises(ValueError):
-            from scripts.benchmark_qwen_reranker import _select_samples
+            from tests.benchmarks.qwen_reranker import _select_samples
 
             _select_samples(
                 [{"sample_id": "s1", "scenario_type": "buying"}],

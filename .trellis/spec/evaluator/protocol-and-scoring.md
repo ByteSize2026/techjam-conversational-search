@@ -39,7 +39,7 @@
 
 ### 1. Scope / Trigger
 
-使用 `scripts/benchmark_qwen_reranker.py compare` 比较由 `--sample-limit` 产生的 smoke 子集时，comparison 必须使用同一个 limit；否则它会按完整 manifest split 校验并错误报告缺失样本。
+使用 `python -m tests.benchmarks.qwen_reranker compare` 比较由 `--sample-limit` 产生的 smoke 子集时，comparison 必须使用同一个 limit；否则它会按完整 manifest split 校验并错误报告缺失样本。
 
 ### 2. Signatures
 

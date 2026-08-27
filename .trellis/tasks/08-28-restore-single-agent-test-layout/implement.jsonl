@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/agent/index.md", "reason": "正式 Agent 入口与协议边界"}
+{"file": ".trellis/spec/agent/contract-and-state.md", "reason": "单 Agent 状态、Intent Override 与模块边界"}
+{"file": ".trellis/spec/testing/index.md", "reason": "unittest 目录和验证要求"}
+{"file": ".trellis/spec/testing/unittest-fixtures.md", "reason": "确定性 fixture 与离线测试约束"}
+{"file": ".trellis/tasks/08-28-restore-single-agent-test-layout/research/removal-audit.md", "reason": "删除边界与 Git 归属审计"}

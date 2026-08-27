@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from scripts.diagnose_adaptive_recall import run_diagnostic
+from tests.benchmarks.adaptive_recall import run_diagnostic
 
 
 def _write_fixture(root: Path) -> tuple[Path, Path]:

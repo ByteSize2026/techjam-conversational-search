@@ -53,7 +53,9 @@ respond(self, session_id: str, user_message: str, turn: int, top_k: int) -> dict
 
 ### 1. Scope / Trigger
 
-当 `LegacyAgent` 收到明确的属性替换、“忽略早先偏好”或全局重置语言时，用 `IntentUpdate.scope` 驱动确定性状态迁移。首轮模板不得预测未来 Override；`ContestAgent` 不使用此内部合同。
+当 `Agent` 收到明确的属性替换、“忽略早先偏好”或全局重置语言时，用
+`IntentUpdate.scope` 驱动确定性状态迁移。首轮模板不得预测未来 Override；官方
+入口和测试/benchmark 使用同一套合同。
 
 ### 2. Signatures
 

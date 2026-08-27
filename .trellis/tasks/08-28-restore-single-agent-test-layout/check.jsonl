@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/agent/index.md", "reason": "核对正式 Agent 合同"}
+{"file": ".trellis/spec/evaluator/protocol-and-scoring.md", "reason": "确认 evaluator 行为未改变"}
+{"file": ".trellis/spec/testing/index.md", "reason": "完整 unittest 与回归要求"}
+{"file": ".trellis/spec/guides/change-impact.md", "reason": "跨层残留引用和影响检查"}
+{"file": ".trellis/tasks/08-28-restore-single-agent-test-layout/research/removal-audit.md", "reason": "核对删除清单和 untracked 边界"}

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from starter.agent import LegacyAgent as Agent
+from starter.agent import Agent
 from starter.shopping_agent.config import AgentConfig
 from starter.shopping_agent.policy import CandidateGateDecision
 from starter.shopping_agent.state import parse_intent_update
@@ -71,6 +71,21 @@ class AgentContractTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.tempdir.cleanup()
+
+    def test_official_entry_is_pipeline_and_honors_injected_dependencies(self) -> None:
+        config = AgentConfig(retrieval_limit=7, candidate_limit=5)
+        ranker = SimpleNamespace(candidate_limit=5)
+
+        agent = Agent(
+            self.catalog_path,
+            config=config,
+            semantic_ranker=ranker,
+        )
+
+        self.assertEqual(Agent.__module__, "starter.agent")
+        self.assertEqual(Agent.__name__, "Agent")
+        self.assertIs(agent.config, config)
+        self.assertIs(agent.semantic_ranker, ranker)
 
     def test_default_offline_contract_and_diagnostics(self) -> None:
         with patch.dict(
