@@ -1,5 +1,9 @@
 # TechJam Conversational E-Commerce Search Challenge
 
+**本分支 `legacy/qwen`：组员检索 + Qwen rerank 实验。** 评分提交在 **`main`**（ContestAgent PUBLIC，公开集约 Hit 1.0 / 0.953）。不要把 `main` 的 `starter.agent.Agent` 改回这里的管道；这里的 `Agent` 才是 Qwen 实验入口。
+
+---
+
 Build an AI shopping agent that asks useful follow-up questions and recommends the customer's hidden target product within at most 10 turns.
 
 ## What You Receive
