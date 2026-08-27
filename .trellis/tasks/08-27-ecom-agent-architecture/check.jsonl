@@ -1,0 +1,8 @@
+{"file":".trellis/spec/guides/index.md","reason":"Run the project-wide cross-layer and offline quality gates."}
+{"file":".trellis/spec/guides/change-impact.md","reason":"Check every Agent/state change against all evaluator scenarios and recommendation filtering."}
+{"file":".trellis/spec/agent/contract-and-state.md","reason":"Verify public compatibility, session isolation, override and response schema."}
+{"file":".trellis/spec/evaluator/protocol-and-scoring.md","reason":"Ensure the unchanged evaluator still receives valid Top-10 results and score semantics remain intact."}
+{"file":".trellis/spec/data-contracts/jsonl-privacy-submission.md","reason":"Audit catalog-only facts, valid IDs, credentials and submission constraints."}
+{"file":".trellis/spec/testing/unittest-fixtures.md","reason":"Verify tests are deterministic, offline and use repository conventions."}
+{"file":".trellis/tasks/08-27-ecom-agent-architecture/research/architecture-reuse.md","reason":"Check implementation against the researched reuse and deliberate exclusion decisions."}
+{"file":".trellis/tasks/08-27-ecom-agent-architecture/research/baseline.md","reason":"Compare the post-change tests and public evaluator against the recorded pre-change baseline."}

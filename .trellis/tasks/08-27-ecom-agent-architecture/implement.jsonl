@@ -1,0 +1,7 @@
+{"file":".trellis/spec/agent/index.md","reason":"Preserve the official Agent facade, session lifecycle and output contract."}
+{"file":".trellis/spec/agent/contract-and-state.md","reason":"Implement tool state and pause/resume without breaking reset/respond, override or ask_attribute semantics."}
+{"file":".trellis/spec/data-contracts/jsonl-privacy-submission.md","reason":"Restrict tools to released catalog/profile data and preserve secret, ID and submission boundaries."}
+{"file":".trellis/spec/guides/offline-reproducibility.md","reason":"Keep model planning opt-in and retain a tested offline deterministic path."}
+{"file":".trellis/spec/testing/unittest-fixtures.md","reason":"Follow the existing unittest and temporary-catalog fixture conventions."}
+{"file":".trellis/tasks/08-27-ecom-agent-architecture/research/architecture-reuse.md","reason":"Use the researched current/EComAgentBench reuse boundary and selected plain-Python adaptation."}
+{"file":".trellis/tasks/08-27-ecom-agent-architecture/research/baseline.md","reason":"Preserve the exact pre-change tests and public evaluator metrics for regression comparison."}
