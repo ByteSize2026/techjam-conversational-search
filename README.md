@@ -110,6 +110,9 @@ SHOPPING_AGENT_CANDIDATE_LIMIT        # compatibility alias for the previous set
 SHOPPING_AGENT_RETRIEVAL_LIMIT        # retrieval budget; default: 100
 SHOPPING_AGENT_MODEL_MAX_TOKENS       # completion cap; default: 512
 SHOPPING_AGENT_MODEL_TEMPERATURE      # default: 0
+SHOPPING_AGENT_TOOL_PLANNING_ENABLED  # opt in to the bounded action loop; default: false
+SHOPPING_AGENT_TOOL_MAX_STEPS         # planner actions per respond call; default: 4
+SHOPPING_AGENT_TOOL_TIMEOUT_SECONDS   # total action-loop budget per respond; default: 8
 ```
 
 Both `SHOPPING_AGENT_LOCAL_BASE_URL` and `SHOPPING_AGENT_LOCAL_MODEL` must be set to enable the local tier. A local server only needs to expose an OpenAI-compatible `POST /chat/completions` endpoint; for example:
@@ -121,6 +124,22 @@ python3 -m evaluator.local_evaluator
 ```
 
 This example intentionally does not prescribe a checkpoint or server launch command. Token usage is reported only when the successful backend supplies valid non-negative `prompt_tokens` and `completion_tokens`; failed tiers never contribute usage. Browsing currently uses the broad lexical plus category-diversity fallback. A dense route will be enabled only after frozen assets pass the documented resource and candidate-recall gates.
+
+### Optional Shopping Action Loop
+
+Tool planning is disabled by default, so the existing offline evaluator path
+keeps its deterministic behavior. When explicitly enabled with a configured
+model backend, the same `reset/respond` facade can choose among
+`search_products`, `filter_products`, `get_product_details`,
+`get_user_profile`, `ask_user`, and `recommend_products`. Non-user actions can
+run several times inside one `respond`; `ask_user` pauses and maps back to the
+official `message + ask_attribute` response, then resumes on the next turn.
+
+All returned product facts and IDs come from `data/catalog.jsonl`. There is no
+review tool because the released data contains ratings and rating counts but
+not review text. Invalid actions, time/step exhaustion, or model failure return
+to the deterministic pipeline. `Agent.last_diagnostics` exposes the execution
+mode and a bounded action trajectory for local debugging.
 
 ## Files
 

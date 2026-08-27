@@ -7,10 +7,10 @@ offline configuration with no model backends enabled.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
 import math
 import os
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -108,6 +108,13 @@ class AgentConfig:
     model_max_tokens: int = 512
     temperature: float = 0.0
 
+    # ECom-style tool planning is opt-in.  Without an injected planner or
+    # this flag plus a configured model backend, Agent keeps the original
+    # deterministic pipeline.
+    tool_planning_enabled: bool = False
+    tool_max_steps: int = 4
+    tool_timeout_seconds: float = 8.0
+
     # Optional local Qwen3-Reranker.  A path is intentionally the opt-in
     # switch: model IDs are not accepted as a default because the evaluator
     # may run offline and must never download a checkpoint implicitly.
@@ -183,6 +190,15 @@ class AgentConfig:
             )
             if env.get("SHOPPING_AGENT_MODEL_TEMPERATURE") is not None
             else 0.0,
+            tool_planning_enabled=_boolean(
+                env.get("SHOPPING_AGENT_TOOL_PLANNING_ENABLED"), False
+            ),
+            tool_max_steps=_positive_int(
+                env.get("SHOPPING_AGENT_TOOL_MAX_STEPS"), 4
+            ),
+            tool_timeout_seconds=_positive_float(
+                env.get("SHOPPING_AGENT_TOOL_TIMEOUT_SECONDS"), 8.0
+            ),
             qwen_reranker_model_path=_optional_text(
                 env.get("SHOPPING_AGENT_QWEN_RERANKER_MODEL_PATH")
                 or env.get("SHOPPING_AGENT_QWEN_RERANKER_PATH")

@@ -2,15 +2,23 @@
 
 from __future__ import annotations
 
-from collections import Counter
-from collections.abc import Mapping, Sequence
 import math
-from pathlib import Path
 import re
 import time
+from collections import Counter
+from collections.abc import Mapping, Sequence
+from pathlib import Path
 
-from .shopping_agent.catalog import CatalogRepository, ProductRecord, RetrievedProduct, safe_terms
+from .shopping_agent.catalog import (
+    CatalogRepository,
+    ProductRecord,
+    RetrievedProduct,
+    safe_terms,
+)
 from .shopping_agent.config import AgentConfig
+from .shopping_agent.model import TieredModelClient
+from .shopping_agent.orchestrator import ActionOrchestrator
+from .shopping_agent.planner import ModelActionPlanner
 from .shopping_agent.policy import (
     CandidateGate,
     ClarificationPolicy,
@@ -27,16 +35,17 @@ from .shopping_agent.state import (
     SessionState,
     SessionStore,
     StateReducer,
+    bind_clarification_answer,
     parse_intent_update,
 )
-
+from .shopping_agent.tools import ShoppingToolbox
 
 ABSOLUTE_CAP = 600
 NON_CATEGORY_TAIL = 100
 
 
 class Agent:
-    """Stateful, deterministic retrieval pipeline with optional LLM reranking."""
+    """Offline-first shopping Agent with an optional bounded action loop."""
 
     def __init__(
         self,
@@ -49,6 +58,8 @@ class Agent:
         router: IntentRouter | None = None,
         candidate_gate: CandidateGate | None = None,
         clarification_policy: ClarificationPolicy | None = None,
+        action_planner: object | None = None,
+        action_orchestrator: ActionOrchestrator | None = None,
     ) -> None:
         self.catalog_path = Path(catalog_path)
         self.config = config or AgentConfig.from_env()
@@ -85,10 +96,31 @@ class Agent:
                 config=self.config,
                 candidate_limit=self.config.candidate_limit,
             )
+        self.action_planner = action_planner
+        if action_orchestrator is not None:
+            self.action_orchestrator = action_orchestrator
+            if self.action_planner is None:
+                self.action_planner = getattr(action_orchestrator, "planner", None)
+        else:
+            if self.action_planner is None and getattr(self.config, "tool_planning_enabled", False):
+                planner_client = model_client or TieredModelClient.from_config(self.config)
+                backend_names = getattr(planner_client, "backend_names", ())
+                if model_client is not None or backend_names:
+                    self.action_planner = ModelActionPlanner(planner_client)  # type: ignore[arg-type]
+            self.action_orchestrator = (
+                ActionOrchestrator(
+                    self.action_planner,  # type: ignore[arg-type]
+                    max_steps=getattr(self.config, "tool_max_steps", 4),
+                    timeout_seconds=getattr(self.config, "tool_timeout_seconds", 8.0),
+                )
+                if self.action_planner is not None
+                else None
+            )
         self.last_diagnostics: dict[str, object] = {
             "event": "initialized",
             "catalog_size": len(self.repository),
             "model_backends": self._model_backends(),
+            "tool_planning": self.action_orchestrator is not None,
         }
         self._last_retrieval_diagnostics: dict[str, object] = {}
 
@@ -109,6 +141,7 @@ class Agent:
             "intent_epoch": state.intent_epoch,
             "catalog_size": len(self.repository),
             "model_backends": self._model_backends(),
+            "tool_planning": self.action_orchestrator is not None,
         }
 
     def respond(self, session_id: str, user_message: str, turn: int, top_k: int) -> dict:
@@ -118,7 +151,10 @@ class Agent:
         if state is None:
             state = self.store.reset(session_id, {})
         try:
-            response = self._respond_impl(state, user_message, turn, top_k)
+            if self.action_orchestrator is not None:
+                response = self._respond_tool_impl(state, user_message, turn, top_k)
+            else:
+                response = self._respond_impl(state, user_message, turn, top_k)
         except Exception as exc:  # public boundary must not leak pipeline errors
             response = self._fallback_response(top_k)
             self.last_diagnostics = {
@@ -138,14 +174,24 @@ class Agent:
         state.last_diagnostics = dict(self.last_diagnostics)
         return self._guard(response, top_k)
 
-    def _respond_impl(self, state: SessionState, user_message: object, turn: int, top_k: int) -> dict:
+    def _respond_impl(
+        self,
+        state: SessionState,
+        user_message: object,
+        turn: int,
+        top_k: int,
+        *,
+        _prepared: bool = False,
+        _old_epoch: int | None = None,
+    ) -> dict:
         turn = max(int(turn), 1)
         limit = self._limit(top_k)
         message = str(user_message or "")
-        old_epoch = state.intent_epoch
-        update = parse_intent_update(message, turn=turn)
-        self.reducer.apply(state, update, turn=turn)
-        state.record_message(turn, message)
+        old_epoch = state.intent_epoch if _old_epoch is None else int(_old_epoch)
+        if not _prepared:
+            update = parse_intent_update(message, turn=turn)
+            self.reducer.apply(state, update, turn=turn)
+            state.record_message(turn, message)
         context = state.runtime_context(turn=turn, remaining_turns=max(10 - turn, 0))
         route = self.router.decide(context)
         state.active_route = route.mode
@@ -224,6 +270,7 @@ class Agent:
             result["usage"] = usage
         self.last_diagnostics = {
             "event": "respond",
+            "execution_mode": "deterministic",
             "session_id": state.session_id,
             "turn": turn,
             "intent_epoch": state.intent_epoch,
@@ -254,6 +301,188 @@ class Agent:
             **retrieval_diagnostics,
         }
         return result
+
+    def _respond_tool_impl(
+        self,
+        state: SessionState,
+        user_message: object,
+        turn: int,
+        top_k: int,
+    ) -> dict[str, object]:
+        """Apply the turn once, then let the planner select bounded actions."""
+
+        turn = max(int(turn), 1)
+        limit = self._limit(top_k)
+        message = str(user_message or "")
+        old_epoch = state.intent_epoch
+        pending = state.pending_task
+        update = parse_intent_update(message, turn=turn)
+        if pending is not None and pending.intent_epoch == state.intent_epoch:
+            update = bind_clarification_answer(
+                update,
+                attribute=pending.ask_attribute,
+                message=message,
+            )
+        self.reducer.apply(state, update, turn=turn)
+        state.record_message(turn, message)
+        resumed = bool(
+            pending is not None
+            and pending.intent_epoch == state.intent_epoch
+            and not update.global_override
+        )
+        if resumed:
+            state.pending_task = None
+
+        toolbox = ShoppingToolbox(
+            self.repository,
+            state,
+            top_k=limit,
+            deterministic_candidate_ids=state.last_candidate_ids,
+        )
+        result = self.action_orchestrator.run(  # type: ignore[union-attr]
+            state,
+            toolbox,
+            user_message=message,
+            turn=turn,
+            resumed_after_ask=resumed,
+            resumed_task=pending if resumed else None,
+        )
+        if result.fallback_needed or result.response is None:
+            response = self._respond_impl(
+                state,
+                message,
+                turn,
+                limit,
+                _prepared=True,
+                _old_epoch=old_epoch,
+            )
+            response = self._merge_usage(response, result.usage)
+            response_usage = response.get("usage")
+            merged_usage = (
+                dict(response_usage)
+                if isinstance(response_usage, Mapping)
+                else None
+            )
+            self.last_diagnostics = {
+                **self.last_diagnostics,
+                "execution_mode": "fallback",
+                "tool_fallback_reason": result.reason,
+                "tool_action_count": result.action_count,
+                "tool_backend": result.backend,
+                "tool_failures": self._tool_failures(result.failures),
+                "usage": merged_usage,
+                "profile_loaded": state.profile_loaded,
+                "resumed_after_ask": resumed,
+                "tool_trajectory": self._turn_trajectory(state, turn),
+            }
+            return response
+
+        response = dict(result.response)
+        if result.reason == "recommend_products":
+            response = self._fill_tool_recommendations(state, response, message, turn, limit)
+        raw_recommendations = response.get("recommendations")
+        recommendation_count = (
+            len(raw_recommendations)
+            if isinstance(raw_recommendations, Sequence)
+            and not isinstance(raw_recommendations, (str, bytes))
+            else 0
+        )
+        self.last_diagnostics = {
+            "event": "respond",
+            "execution_mode": "tool_loop",
+            "session_id": state.session_id,
+            "turn": turn,
+            "intent_epoch": state.intent_epoch,
+            "epoch_changed": state.intent_epoch != old_epoch,
+            "tool_terminal_reason": result.reason,
+            "tool_action_count": result.action_count,
+            "tool_backend": result.backend,
+            "tool_failures": self._tool_failures(result.failures),
+            "usage": result.usage,
+            "profile_loaded": state.profile_loaded,
+            "pending_attribute": (
+                state.pending_task.ask_attribute if state.pending_task is not None else None
+            ),
+            "resumed_after_ask": resumed,
+            "candidate_count": len(state.tool_candidate_ids),
+            "recommendation_count": recommendation_count,
+            "tool_trajectory": self._turn_trajectory(state, turn),
+        }
+        return response
+
+    def _fill_tool_recommendations(
+        self,
+        state: SessionState,
+        response: dict[str, object],
+        message: str,
+        turn: int,
+        limit: int,
+    ) -> dict[str, object]:
+        raw = response.get("recommendations")
+        current = [
+            item.get("parent_asin") if isinstance(item, Mapping) else item
+            for item in raw
+        ] if isinstance(raw, Sequence) and not isinstance(raw, (str, bytes)) else []
+        ids = self._valid_ids(current, limit)
+        if len(ids) < limit:
+            context = state.runtime_context(turn=turn, remaining_turns=max(10 - turn, 0))
+            route = self.router.decide(context)
+            candidates = self._retrieve(state, message, route.retrieval_budget, route=route)
+            ranked = self._feature_rank(state, candidates, context, limit=route.retrieval_budget)
+            ids = self._valid_ids(
+                [*ids, *(item.parent_asin for item in ranked), *(item.parent_asin for item in self.repository.popular(limit))],
+                limit,
+            )
+        state.last_candidate_ids = list(ids)
+        state.record_recommendations(ids)
+        response["recommendations"] = [{"parent_asin": item} for item in ids]
+        return response
+
+    @staticmethod
+    def _merge_usage(
+        response: dict[str, object],
+        additional: Mapping[str, object] | None,
+    ) -> dict[str, object]:
+        if not additional:
+            return response
+        raw_base = response.get("usage")
+        base: Mapping[str, object] = raw_base if isinstance(raw_base, Mapping) else {}
+        def valid_count(value: object) -> int | None:
+            return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+        prompt = valid_count(base.get("prompt_tokens", 0))
+        completion = valid_count(base.get("completion_tokens", 0))
+        extra_prompt = valid_count(additional.get("prompt_tokens", 0))
+        extra_completion = valid_count(additional.get("completion_tokens", 0))
+        if None not in (prompt, completion, extra_prompt, extra_completion):
+            assert prompt is not None
+            assert completion is not None
+            assert extra_prompt is not None
+            assert extra_completion is not None
+            response["usage"] = {
+                "prompt_tokens": prompt + extra_prompt,
+                "completion_tokens": completion + extra_completion,
+            }
+        return response
+
+    @staticmethod
+    def _tool_failures(failures: Sequence[object]) -> list[object]:
+        output: list[object] = []
+        for failure in failures[:10]:
+            as_dict = getattr(failure, "as_dict", None)
+            try:
+                output.append(as_dict() if callable(as_dict) else str(failure)[:500])
+            except (AttributeError, TypeError, ValueError):
+                output.append(str(failure)[:500])
+        return output
+
+    @staticmethod
+    def _turn_trajectory(state: SessionState, turn: int) -> list[dict[str, object]]:
+        return [
+            item.as_dict()
+            for item in state.tool_trajectory
+            if item.turn == int(turn)
+        ]
 
     @staticmethod
     def _limit(value: object) -> int:

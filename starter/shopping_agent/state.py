@@ -9,13 +9,14 @@ evidence instead of inventing an exact constraint.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
 import hashlib
 import json
 import re
-from typing import Any, Literal
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
+from typing import Literal
 
+from .actions import PendingTask, TrajectoryEntry
 
 Attribute = Literal[
     "category",
@@ -287,6 +288,11 @@ class SessionState:
     query_terms: list[str] = field(default_factory=list)
     superseded_constraints: list[Constraint] = field(default_factory=list)
     last_diagnostics: dict[str, object] = field(default_factory=dict)
+    profile_loaded: bool = False
+    pending_task: PendingTask | None = None
+    tool_candidate_ids: list[str] = field(default_factory=list)
+    tool_trajectory: list[TrajectoryEntry] = field(default_factory=list)
+    last_tool_error: str | None = None
 
     @property
     def active_constraints(self) -> list[Constraint]:
@@ -330,6 +336,14 @@ class SessionState:
         # history to cover all ten evaluator turns while keeping state small.
         if len(current) > 200:
             del current[:-200]
+
+    def record_tool_entry(self, entry: TrajectoryEntry) -> None:
+        self.tool_trajectory.append(entry)
+        # The orchestrator hard-caps itself at twelve actions per official turn.
+        # Retain those actions plus one pause/resume/fallback control entry per
+        # turn while keeping the session footprint finite.
+        if len(self.tool_trajectory) > 140:
+            del self.tool_trajectory[:-140]
 
     def fingerprint(self) -> str:
         payload = {
@@ -451,6 +465,9 @@ class StateReducer:
             state.asked_attributes.clear()
             state.recommendations_by_epoch.setdefault(state.intent_epoch, [])
             state.last_candidate_ids.clear()
+            state.pending_task = None
+            state.tool_candidate_ids.clear()
+            state.last_tool_error = None
 
         if state.category_anchor is None and update.category_anchor:
             state.category_anchor = _clean(update.category_anchor, 120)
@@ -651,6 +668,45 @@ def parse_intent_update(message: object, *, turn: int = 0) -> IntentUpdate:
     )
 
 
+def bind_clarification_answer(
+    update: IntentUpdate,
+    *,
+    attribute: object,
+    message: object,
+) -> IntentUpdate:
+    """Attach a bare reply to the structured slot that was actually asked."""
+
+    if update.global_override:
+        return update
+    normalized_attribute = _attribute_name(attribute)
+    if normalized_attribute not in ALLOWED_ATTRIBUTES:
+        return update
+    if normalized_attribute in update.no_preference:
+        return update
+    if any(item.attribute == normalized_attribute for item in update.mutations):
+        return update
+    text = _clean(message, 320)
+    value = _extract_value_after_marker(text) or text
+    if not value:
+        return update
+    mutation = ConstraintMutation(
+        action="upsert",
+        attribute=normalized_attribute,
+        value=value,
+        hardness="soft",
+        source="user",
+        confidence=0.9,
+    )
+    return IntentUpdate(
+        global_override=update.global_override,
+        mutations=(*update.mutations, mutation),
+        category_anchor=update.category_anchor,
+        no_preference=update.no_preference,
+        query_terms=update.query_terms,
+        confidence=max(update.confidence, 0.9),
+    )
+
+
 __all__ = [
     "ALLOWED_ATTRIBUTES",
     "Attribute",
@@ -663,5 +719,6 @@ __all__ = [
     "SessionStore",
     "StateReducer",
     "TurnMessage",
+    "bind_clarification_answer",
     "parse_intent_update",
 ]
