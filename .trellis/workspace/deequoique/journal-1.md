@@ -68,3 +68,24 @@ Implemented target-preserving structured pools, deterministic ranking evidence, 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 4: Refactor shopping agent into focused modules
+
+**Date**: 2026-08-27
+**Task**: Refactor shopping agent into focused modules
+**Branch**: `main`
+
+### Summary
+
+Split the 1,025-line starter Agent into retrieval, deterministic ranking, and response-boundary modules while preserving public and internal compatibility. Verified 75 unittests, Python compilation, independent review, and old-vs-new differential parity; updated the Agent architecture spec.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b3d5ab7` | (see git log) |
+
+### Status
+
+[OK] **Completed**
