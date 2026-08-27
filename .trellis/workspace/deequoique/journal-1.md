@@ -131,3 +131,24 @@ Restored the original retrieval/state pipeline as the only starter.agent.Agent, 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 7: 整理仓库架构与项目文档
+
+**Date**: 2026-08-28
+**Task**: 整理仓库架构与项目文档
+**Branch**: `main`
+
+### Summary
+
+精简中文 README，新增 Diátaxis 文档索引、系统架构、本地评测、模型后端和 benchmark 指南；保留英文公开合同与现有单 Agent 源码布局，并隔离本地私有/生成产物。92 项测试、CLI、链接、checksum 和 200 会话离线评测全部通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `deb69d9` | (see git log) |
+
+### Status
+
+[OK] **Completed**
