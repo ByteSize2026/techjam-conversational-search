@@ -1,0 +1,5 @@
+{"file":".trellis/spec/agent/index.md","reason":"Pre-development checklist and stable Agent interface boundary."}
+{"file":".trellis/spec/agent/contract-and-state.md","reason":"Session isolation, response schema, intent override, and protocol compatibility requirements."}
+{"file":".trellis/spec/testing/index.md","reason":"Required unittest conventions and validation entry point."}
+{"file":".trellis/spec/testing/unittest-fixtures.md","reason":"Regression test style and deterministic fixture guidance."}
+{"file":".trellis/spec/guides/change-impact.md","reason":"Required impact analysis for Agent state, ranking, retrieval, and evaluator-facing outputs."}

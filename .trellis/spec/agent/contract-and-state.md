@@ -13,6 +13,20 @@ respond(self, session_id: str, user_message: str, turn: int, top_k: int) -> dict
 
 `user_profile` 是匿名聚合信息。合同中的字段为 `purchase_frequency`、`average_prior_rating`、`rating_style`、`preference_tags`、`summary`；只能将其用于允许的个性化，不能假定存在直接身份、购买时间戳、原始购买历史或隐藏目标。来源：`docs/agent_api_contract.json:reset_request`、`docs/competition_specification.md`。
 
+## 实现模块边界
+
+`starter/agent.py` 是提交入口和稳定 facade：它负责依赖组装、会话生命周期、
+整轮编排与最终诊断。可复用的实现职责位于 `starter/shopping_agent/`：
+
+- `retrieval.py` 负责路由召回、类目配额、候选合并、多样化和召回诊断。
+- `ranking.py` 负责候选统计、词法证据、确定性特征融合与排序置信证据。
+- `response.py` 负责语义排序适配、usage/failure 提取、fallback 和响应合同校验。
+
+不要把这些实现重新堆回提交 facade。仓库内测试和 benchmark 会直接调用或替换
+`Agent._retrieve`、`_feature_rank`、`_rank_evidence`、`_valid_ids` 等兼容入口；
+重构内部组件时应保留这些薄委托，并让整轮编排继续通过实例方法调用，使运行时
+替换仍然生效。
+
 ## 每轮响应合同
 
 `respond` 的请求中 `turn` 为 1 至 10，`top_k` 固定为 10。响应至少包含：

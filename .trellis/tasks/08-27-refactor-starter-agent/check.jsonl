@@ -1,0 +1,4 @@
+{"file":".trellis/spec/agent/index.md","reason":"Verify exported contract, state isolation, diagnostics, and valid recommendations."}
+{"file":".trellis/spec/agent/contract-and-state.md","reason":"Check evaluator-visible behaviour and fallback response rules."}
+{"file":".trellis/spec/testing/index.md","reason":"Run and assess the repository-standard full unittest suite."}
+{"file":".trellis/spec/guides/change-impact.md","reason":"Review all direct helper consumers and ensure no retrieval/ranking regression."}
