@@ -1,0 +1,29 @@
+scenario=boundary  sample=public_0035
+target=B0BN6CCHB7  Skechers Men's Go Max-Athletic Air Mesh Slip on Walking Shoe Sneaker
+profile=Prior purchases emphasize material, performance, durability; ratings are usually positive.
+
+--- turn 1 ---
+customer: I'm looking for Athletic Walking, but I'm still exploring.
+agent:    Matching Athletic Walking. What material or fabric should I match?
+ask=other  pool=342  hard=342  withhold=True  intent=['Athletic Walking']  scope=none  0ms
+usage prompt=0 completion=0
+
+--- turn 2 ---
+customer: I don't have a preference for other; please use your judgment.
+agent:    Matching Athletic Walking. What material or fabric should I match?
+ask=other  pool=342  hard=342  withhold=True  intent=['Athletic Walking']  scope=none  0ms
+usage prompt=0 completion=0
+
+--- turn 3 ---
+customer: For that, what matters is: fabric; 100% Textile.
+agent:    Matching Athletic Walking — fabric; 100% textile. Here are the closest matches so far. Any colour or print I should lock in?
+ask=other  pool=342  hard=5  withhold=False  intent=['Athletic Walking', 'fabric', '100% textile']  scope=none  160ms
+usage prompt=0 completion=0
+   1. B0BN6CCHB7  Skechers Men's Go Max-Athletic Air Mesh Slip on Walking Shoe Sne  <= TARGET
+   2. B00MES8EIQ  Skechers Performance Women's Go Walk 3 Fitknit Shoe
+   3. B09JLJP8VS  Skechers Women's Go Run Mojo-Mania Sneaker
+   4. B078GTVCS6  Skechers Women's Go Walk Joy-15633 Sneaker
+   5. B00UZ23FRI  Skechers Performance Women's Go Walk Compose Slip-On Walking Sho
+
+--- outcome ---
+HIT turn=3 rank=1

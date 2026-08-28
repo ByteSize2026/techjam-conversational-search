@@ -6,7 +6,14 @@ import json
 import math
 from pathlib import Path
 
-from .contest_text import coarse_category, normalise, parse_price, searchable_blob, terms
+from .contest_text import (
+    catalog_field_lines,
+    coarse_category,
+    normalise,
+    parse_price,
+    searchable_blob,
+    terms,
+)
 
 
 class ContestIndex:
@@ -20,9 +27,11 @@ class ContestIndex:
         self.ratings: list[float] = []
         self.rating_counts: list[int] = []
         self.token_sets: list[set[str]] = []
+        self.field_lines: list[frozenset[str]] = []
         self.buckets: dict[str, list[int]] = {}
         self.bucket_lookup: dict[str, str] = {}
         self._load()
+        self.id_set = set(self.ids)
         max_count = max(self.rating_counts) if self.rating_counts else 1
         self.log_max = math.log1p(max_count) or 1.0
         self._popular = sorted(range(len(self.ids)), key=lambda idx: -self.popularity(idx))
@@ -53,6 +62,7 @@ class ContestIndex:
                 except (TypeError, ValueError):
                     self.rating_counts.append(0)
                 self.token_sets.append(set(terms(blob, limit=256)))
+                self.field_lines.append(catalog_field_lines(product))
                 self.buckets.setdefault(category, []).append(idx)
         self.bucket_lookup = {normalise(name): name for name in self.buckets}
 

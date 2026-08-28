@@ -1,8 +1,9 @@
 """Optional MiniLM cosine over a short hard-filter pool.
 
-Loads ``sentence-transformers/all-MiniLM-L6-v2`` from the local Hugging Face
-cache when possible. Missing torch/transformers/weights, or any encode
-error, leaves ranking unchanged (offline fallback).
+Coupled **after** verbatim AND: popularity stays the sort key, cosine is a
+bounded tie-break on pools of size 2..80. Load cache first, then the Hub
+if the process is allowed to use the network. Missing torch/transformers/
+weights, or any encode error, leaves ranking unchanged.
 """
 
 from __future__ import annotations
@@ -39,25 +40,38 @@ class PoolDenseEncoder:
         self._ensure()
         return bool(self._ready)
 
+    def _offline_only(self) -> bool:
+        flag = os.environ.get("TECHJAM_DENSE_OFFLINE") or os.environ.get("HF_HUB_OFFLINE")
+        return str(flag or "").strip().lower() in {"1", "true", "yes", "on"}
+
+    def _load_transformers(self, local_files_only: bool):
+        import torch
+        from transformers import AutoModel, AutoTokenizer
+
+        tokenizer = AutoTokenizer.from_pretrained(
+            self.model_name, local_files_only=local_files_only
+        )
+        model = AutoModel.from_pretrained(
+            self.model_name, local_files_only=local_files_only
+        )
+        model.eval()
+        return tokenizer, model, torch
+
     def _ensure(self) -> None:
         if self._ready is not None:
             return
-        try:
-            os.environ.setdefault("HF_HUB_OFFLINE", "1")
-            os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
-            import torch
-            from transformers import AutoModel, AutoTokenizer
-
-            tokenizer = AutoTokenizer.from_pretrained(self.model_name, local_files_only=True)
-            model = AutoModel.from_pretrained(self.model_name, local_files_only=True)
-            model.eval()
-        except Exception:
-            self._ready = False
+        attempts = (True,) if self._offline_only() else (True, False)
+        for local_only in attempts:
+            try:
+                tokenizer, model, torch = self._load_transformers(local_only)
+            except Exception:
+                continue
+            self._tokenizer = tokenizer
+            self._model = model
+            self._torch = torch
+            self._ready = True
             return
-        self._tokenizer = tokenizer
-        self._model = model
-        self._torch = torch
-        self._ready = True
+        self._ready = False
 
     def _embed_batch(self, texts: list[str]) -> list[list[float]]:
         if self.encode is not None:

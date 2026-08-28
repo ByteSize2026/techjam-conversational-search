@@ -120,6 +120,40 @@ def searchable_blob(product: Mapping[str, object]) -> str:
     return product_search_text(product)
 
 
+def field_key(value: object, limit: int = 180) -> str:
+    """Exact-line key aligned with the simulator's constraint cleaner.
+
+    ``evaluator.local_evaluator._clean_constraint`` collapses space, strips
+    trailing `` -;,."``, then cuts to 180. We also lowercase so catalog lines
+    match disclosed slots. Trailing punctuation is why ``Designed and printed
+    in the USA`` used to miss the feature bullet ``... USA.``.
+    """
+
+    text = re.sub(r"\s+", " ", str(value or "")).strip().lower()
+    return text.strip(" -;,.\t\n")[:limit].rstrip()
+
+
+def catalog_field_lines(product: Mapping[str, object]) -> frozenset[str]:
+    """Normalized feature bullets and detail values for exact-line ranking."""
+
+    lines: list[str] = []
+    features = product.get("features")
+    if isinstance(features, (list, tuple, set)):
+        for item in features:
+            text = field_key(item)
+            if text:
+                lines.append(text)
+    details = product.get("details")
+    if isinstance(details, Mapping):
+        for key, item in details.items():
+            if item in (None, "", []):
+                continue
+            text = field_key(f"{key}: {item}")
+            if text:
+                lines.append(text)
+    return frozenset(lines)
+
+
 def fold_punct(text: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[,;:/\"']", " ", str(text).lower())).strip()
 

@@ -2,14 +2,14 @@
 
 知识库结论（本赛道定义）：**不需要新建知识库；已经有了。** 这里的「知识库」= 冻结 5 万目录在内存里的检索库（`ContestIndex`），不是外挂 RAG、不是工业向量库、也不是 packing-agent 的 `knowledge/`。
 
-当前分数（PUBLIC，`dense_skip_generic=True`，泛约束跳过 MiniLM 并锁热度 Top-10）：
+当前分数（PUBLIC，`dense_skip_generic=True`，泛约束跳过 MiniLM 并锁热度 Top-10，`w_field=0.35`，`w_phrase=0.15`）：
 
 | 集合 | Hit@10 | MRR | MTTC | 技术分 |
 |---|---:|---:|---:|---:|
-| 公开 200 | 1.000 | 0.9467 | 2.53 | **0.9534** |
-| ID-holdout 200 | 0.980 | 0.7743 | 2.675 | **0.8888** |
+| 公开 200 | 1.000 | 0.9517 | 2.53 | **0.9549** |
+| ID-holdout 200 | 0.980 | 0.8047 | 2.665 | **0.8981** |
 
-验收下一轮改动：**holdout 技术分 > 0.8888 且 Hit ≥ 0.980，公开 Hit 仍为 1.0。** 只涨公开、holdout 不动或变差，不进 PUBLIC。
+验收下一轮改动：**holdout 技术分 > 0.8981 且 Hit ≥ 0.980，公开 Hit 仍为 1.0。** 只涨公开、holdout 不动或变差，不进 PUBLIC。
 
 技术分 = `0.50×Hit + 0.30×MRR + 0.20×Efficiency`。holdout 相对公开掉约 0.065，其中 MRR 0.947→0.774 约占 −0.052，Hit 1.00→0.98 约占 −0.010。还能动的几乎全是 **合取之后怎么排克隆**。
 
@@ -90,4 +90,4 @@
 | `strict_override_gate` | 拒绝 | Override MRR 几乎不动、MTTC 变差 |
 | `overlap_margin`、`w_price`、`min_slots=2` | 拒绝 | 公开无增益或掉分 |
 
-下一件实事：硬池 IDF/BM25 小权重，holdout 判，公开 Hit 保 1.0。不是再加知识库。
+下一件实事：硬池克隆排序（`w_field` 已进 PUBLIC）。IDF/BM25/标题独有词已拒。holdout 判，公开 Hit 保 1.0。不是再加知识库。

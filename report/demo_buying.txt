@@ -1,0 +1,19 @@
+scenario=buying  sample=public_0001
+target=B09PYB7B6Z  QIAN0813 Celttic Knot Triple Moon Pentagram Pentacle Star Wicca Pendant Necklace
+profile=Prior purchases emphasize fit, comfort, durability; ratings are usually positive.
+
+--- turn 1 ---
+customer: I'm looking for Jewelry Necklaces. A key requirement is: Material:alloy.
+agent:    Matching Jewelry Necklaces — material:alloy. What material or fabric should I match?
+ask=other  pool=329  hard=12  withhold=True  intent=['Jewelry Necklaces', 'material:alloy']  scope=none  32ms
+usage prompt=0 completion=0
+
+--- turn 2 ---
+customer: For that, what matters is: Triple Moon Pentagram Symbol; The Triple Moon represents the Phases of the Moon which are linked to the three aspects of the Goddess and the phases of the Life of Women.The Pentagram representing the holistic r.
+agent:    Matching Jewelry Necklaces — material:alloy; triple moon pentagram symbol; the triple moon represents the phases of the moon whi.... Here are the closest matches so far. What material or fabric should I match?
+ask=other  pool=329  hard=1  withhold=False  intent=['Jewelry Necklaces', 'material:alloy', 'triple moon pentagram symbol', 'the triple moon represents the phases of the moon whi...']  scope=none  27ms
+usage prompt=0 completion=0
+   1. B09PYB7B6Z  QIAN0813 Celttic Knot Triple Moon Pentagram Pentacle Star Wicca   <= TARGET
+
+--- outcome ---
+HIT turn=2 rank=1

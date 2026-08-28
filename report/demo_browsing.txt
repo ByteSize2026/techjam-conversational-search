@@ -1,0 +1,25 @@
+scenario=browsing  sample=public_0006
+target=B071F2Z7JG  Pro Club Men's Heavyweight Mesh Basketball Shorts
+profile=Prior purchases emphasize comfort, fit, durability, style; ratings are critical.
+
+--- turn 1 ---
+customer: I'm looking for Basketball Men, but I'm still exploring.
+agent:    Matching Basketball Men. What material or fabric should I match?
+ask=other  pool=80  hard=80  withhold=True  intent=['Basketball Men']  scope=none  70ms
+usage prompt=0 completion=0
+
+--- turn 2 ---
+customer: For that, what matters is: polyester; 100% Polyester.
+agent:    Matching Basketball Men — polyester; 100% polyester. Any colour or print I should lock in?
+ask=other  pool=80  hard=34  withhold=True  intent=['Basketball Men', 'polyester', '100% polyester']  scope=none  146ms
+usage prompt=0 completion=0
+
+--- turn 3 ---
+customer: For that, what matters is: Drawstring closure; High quality mesh for maximum breathability to keep you cool.
+agent:    Matching Basketball Men — polyester; 100% polyester; drawstring closure. Here are the closest matches so far. Any colour or print I should lock in?
+ask=other  pool=80  hard=1  withhold=False  intent=['Basketball Men', 'polyester', '100% polyester', 'drawstring closure']  scope=none  188ms
+usage prompt=0 completion=0
+   1. B071F2Z7JG  Pro Club Men's Heavyweight Mesh Basketball Shorts  <= TARGET
+
+--- outcome ---
+HIT turn=3 rank=1

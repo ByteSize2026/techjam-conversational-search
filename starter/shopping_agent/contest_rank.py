@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
 
 from .contest_config import ContestConfig
@@ -16,6 +17,7 @@ from .contest_text import (
     STOPWORDS,
     coarse_category,
     constraint_matches,
+    field_key,
     fold_punct,
     normalise,
     parse_price,
@@ -276,8 +278,27 @@ def rank(
     tags: list[str] = []
     if config.use_profile_prior and not (config.profile_cold_start_only and slots):
         tags = state.profile_tags()
+    apply_field = bool(config.w_field and slots and 2 <= len(pool) <= config.field_pool_limit)
+    field_map: dict[int, float] = {}
+    if apply_field:
+        field_map = field_match_scores(index, pool, slots)
+        if not field_map:
+            apply_field = False
+    field_flat = bool(
+        apply_field
+        and field_map
+        and (max(field_map.values()) - min(field_map.values()) < 1e-9)
+    )
     dense_map: dict[int, float] = {}
     skip_dense = bool(config.dense_skip_generic and slots_are_generic(slots))
+    if (
+        skip_dense
+        and config.dense_generic_cap > 0
+        and 2 <= len(pool) <= config.dense_generic_cap
+    ):
+        skip_dense = False
+    if field_flat and config.dense_skip_field_flat:
+        skip_dense = True
     if config.w_dense and not skip_dense and 2 <= len(pool) <= config.dense_pool_limit:
         encoder = get_encoder()
         if encoder.available():
@@ -303,6 +324,38 @@ def rank(
                 values = None
             if values is not None and len(values) == len(pool):
                 rerank_map = {idx: value for idx, value in zip(pool, values, strict=False)}
+    idf_tokens: list[str] = []
+    idf_df: dict[str, int] = {}
+    apply_idf = bool(config.w_idf and slots and 2 <= len(pool) <= config.idf_pool_limit)
+    apply_exclusive = bool(config.w_exclusive and slots and 2 <= len(pool) <= config.idf_pool_limit)
+    apply_bm25 = bool(config.w_bm25 and slots and 2 <= len(pool) <= config.bm25_pool_limit)
+    bm25_map: dict[int, float] = {}
+    if apply_idf or apply_exclusive:
+        idf_tokens = distinctive_slot_tokens(slots)
+        if idf_tokens:
+            for token in idf_tokens:
+                idf_df[token] = sum(1 for idx in pool if token in index.token_sets[idx])
+        else:
+            apply_idf = False
+            apply_exclusive = False
+    if apply_bm25:
+        bm25_tokens = distinctive_slot_tokens(slots)
+        if bm25_tokens:
+            bm25_map = bm25_pool_scores(index, pool, bm25_tokens)
+        if not bm25_map:
+            apply_bm25 = False
+    apply_uniq = bool(config.w_uniq and 2 <= len(pool) <= config.uniq_pool_limit)
+    uniq_map: dict[int, float] = {}
+    if apply_uniq:
+        uniq_map = title_uniqueness_scores(index, pool)
+        if not uniq_map:
+            apply_uniq = False
+    apply_phrase = bool(config.w_phrase and slots and 2 <= len(pool) <= config.phrase_pool_limit)
+    phrase_map: dict[int, float] = {}
+    if apply_phrase:
+        phrase_map = phrase_title_scores(index, pool, slots)
+        if not phrase_map:
+            apply_phrase = False
     scored: list[tuple[float, str, int]] = []
     for idx in pool:
         score = 0.0
@@ -319,8 +372,22 @@ def rank(
             score += config.w_title * title_bonus(index.titles[idx], slots)
         if config.w_price and slots:
             score += config.w_price * price_bonus(index, idx, slots)
+        if apply_idf:
+            score += config.w_idf * idf_bonus(index, idx, idf_tokens, idf_df, len(pool))
+        if apply_exclusive:
+            score += config.w_exclusive * exclusive_bonus(index, idx, idf_tokens, idf_df)
+        if apply_bm25:
+            score += config.w_bm25 * bm25_map.get(idx, 0.0)
+        if apply_uniq:
+            score += config.w_uniq * uniq_map.get(idx, 0.0)
+        if apply_field:
+            score += config.w_field * field_map.get(idx, 0.0)
+        if apply_phrase:
+            score += config.w_phrase * phrase_map.get(idx, 0.0)
         if dense_map:
             score += config.w_dense * dense_map.get(idx, 0.0)
+            if config.w_dense_tiny and _dense_tiny_applies(index, pool, config):
+                score += config.w_dense_tiny * dense_map.get(idx, 0.0)
         if rerank_map:
             score += config.w_rerank * rerank_map.get(idx, 0.0)
         if tags:
@@ -331,13 +398,262 @@ def rank(
     if skip_dense:
         # Lexical noise can still drop a pop-rank-8 generic target; lock the
         # popularity head when MiniLM was skipped for catalog chrome.
-        scored = apply_pop_floor(scored, index, config.dense_pop_floor or 10)
+        # Field-flat distinctive clones: lock only the hottest (tiny pools
+        # make floor=10 a no-op, and extra MiniLM had dethroned the leader).
+        if (
+            config.dense_skip_field_flat
+            and field_flat
+            and not slots_are_generic(slots)
+        ):
+            scored = apply_pop_floor(scored, index, 1)
+        else:
+            scored = apply_pop_floor(scored, index, config.dense_pop_floor or 10)
     elif dense_map or rerank_map:
         if config.dense_rrf_k:
             scored = merge_pop_dense_rrf(scored, index, config.dense_rrf_k)
         elif config.dense_pop_floor:
             scored = apply_pop_floor(scored, index, config.dense_pop_floor)
     return [idx for _score, _asin, idx in scored[: max(limit, 0)]]
+
+
+def popularity_gap(index: ContestIndex, pool: Sequence[int]) -> float:
+    """Popularity lead of the hottest pool item over the second hottest."""
+
+    if len(pool) < 2:
+        return 1.0
+    top = sorted((index.popularity(idx) for idx in pool), reverse=True)
+    return top[0] - top[1]
+
+
+def _dense_tiny_applies(
+    index: ContestIndex, pool: Sequence[int], config: ContestConfig
+) -> bool:
+    n = len(pool)
+    if n < 2:
+        return False
+    if n <= config.dense_tiny_cap:
+        return True
+    if config.dense_tie_margin <= 0 or n > config.dense_tie_cap:
+        return False
+    return popularity_gap(index, pool) < config.dense_tie_margin
+
+
+def distinctive_slot_tokens(slots: Sequence[Slot]) -> list[str]:
+    """Disclosed tokens that are not catalog chrome (cotton/color/imported)."""
+
+    found: list[str] = []
+    seen: set[str] = set()
+    for item in slots:
+        if item.kind == "budget":
+            continue
+        for token in item.tokens:
+            if token in _DENSE_GENERIC or len(token) < 3 or token.isdigit() or token in seen:
+                continue
+            seen.add(token)
+            found.append(token)
+    return found
+
+
+def idf_bonus(
+    index: ContestIndex,
+    idx: int,
+    tokens: Sequence[str],
+    df: Mapping[str, int],
+    pool_n: int,
+) -> float:
+    """0–1: how much of the distinctive query mass this product covers."""
+
+    if not tokens or pool_n <= 0:
+        return 0.0
+    bag = index.token_sets[idx]
+    total = 0.0
+    got = 0.0
+    for token in tokens:
+        weight = math.log((pool_n + 1) / (df.get(token, 0) + 1)) + 1.0
+        total += weight
+        if token in bag:
+            got += weight
+    return got / total if total else 0.0
+
+
+def _catalog_df(index: ContestIndex, token: str) -> int:
+    cache = getattr(index, "_token_df", None)
+    if cache is None:
+        cache = {}
+        index._token_df = cache
+    if token not in cache:
+        cache[token] = sum(1 for bag in index.token_sets if token in bag)
+    return cache[token]
+
+
+def bm25_pool_scores(
+    index: ContestIndex,
+    pool: Sequence[int],
+    tokens: Sequence[str],
+    *,
+    k1: float = 1.2,
+    b: float = 0.75,
+) -> dict[int, float]:
+    """Min-max BM25 of distinctive query tokens over the hard pool.
+
+    IDF uses the full catalog so tokens that every clone contains still have
+    weight. Title hits count twice. Length is |token_set|.
+    """
+
+    if not tokens or len(pool) < 2:
+        return {}
+    n = max(len(index), 1)
+    idf = {
+        token: math.log((n - _catalog_df(index, token) + 0.5) / (_catalog_df(index, token) + 0.5) + 1.0)
+        for token in tokens
+    }
+    lengths = [max(len(index.token_sets[idx]), 1) for idx in pool]
+    avgdl = sum(lengths) / len(lengths)
+    raw: dict[int, float] = {}
+    for idx in pool:
+        title_bag = set(terms(index.titles[idx]))
+        bag = index.token_sets[idx]
+        dl = max(len(bag), 1)
+        total = 0.0
+        for token in tokens:
+            if token not in bag:
+                continue
+            tf = 2.0 if token in title_bag else 1.0
+            denom = tf + k1 * (1.0 - b + b * dl / avgdl)
+            total += idf[token] * tf * (k1 + 1.0) / denom
+        raw[idx] = total
+    values = list(raw.values())
+    lo = min(values)
+    hi = max(values)
+    if hi - lo < 1e-9:
+        return {idx: 0.0 for idx in pool}
+    return {idx: (value - lo) / (hi - lo) for idx, value in raw.items()}
+
+
+def title_uniqueness_scores(
+    index: ContestIndex, pool: Sequence[int]
+) -> dict[int, float]:
+    """Min-max share of non-chrome title tokens that are unique in this pool."""
+
+    if len(pool) < 2:
+        return {}
+    skip = _TITLE_SKIP | _DENSE_GENERIC
+    titles: dict[int, list[str]] = {}
+    df: dict[str, int] = {}
+    for idx in pool:
+        tokens = [
+            token
+            for token in terms(index.titles[idx])
+            if token not in skip and len(token) >= 3 and not token.isdigit()
+        ]
+        titles[idx] = tokens
+        seen = set(tokens)
+        for token in seen:
+            df[token] = df.get(token, 0) + 1
+    raw: dict[int, float] = {}
+    for idx, tokens in titles.items():
+        if not tokens:
+            raw[idx] = 0.0
+            continue
+        unique = sum(1 for token in tokens if df.get(token, 0) == 1)
+        raw[idx] = unique / len(tokens)
+    values = list(raw.values())
+    lo = min(values)
+    hi = max(values)
+    if hi - lo < 1e-9:
+        return {idx: 0.0 for idx in pool}
+    return {idx: (value - lo) / (hi - lo) for idx, value in raw.items()}
+
+
+def field_match_scores(
+    index: ContestIndex,
+    pool: Sequence[int],
+    slots: Sequence[Slot],
+) -> dict[int, float]:
+    """Min-max fraction of disclosed slots that equal a feature/details line."""
+
+    keys: list[str] = []
+    seen: set[str] = set()
+    for item in slots:
+        if item.kind == "budget":
+            continue
+        key = field_key(item.text)
+        if len(key) < 8 or key in seen:
+            continue
+        seen.add(key)
+        keys.append(key)
+    if not keys or len(pool) < 2:
+        return {}
+    lines = getattr(index, "field_lines", None)
+    raw: dict[int, float] = {}
+    for idx in pool:
+        fields = lines[idx] if lines and idx < len(lines) else frozenset()
+        hits = sum(1 for key in keys if key in fields)
+        raw[idx] = hits / len(keys)
+    values = list(raw.values())
+    lo = min(values)
+    hi = max(values)
+    if hi - lo < 1e-9:
+        return {idx: 0.0 for idx in pool}
+    return {idx: (value - lo) / (hi - lo) for idx, value in raw.items()}
+
+
+def phrase_title_scores(
+    index: ContestIndex,
+    pool: Sequence[int],
+    slots: Sequence[Slot],
+) -> dict[int, float]:
+    """Min-max fraction of distinctive slots that appear as a title substring."""
+
+    keys: list[str] = []
+    seen: set[str] = set()
+    for item in slots:
+        if item.kind == "budget":
+            continue
+        if not distinctive_slot_tokens([item]):
+            continue
+        key = field_key(item.text)
+        if len(key) < 8 or key in seen:
+            continue
+        seen.add(key)
+        keys.append(key)
+    if not keys or len(pool) < 2:
+        return {}
+    raw: dict[int, float] = {}
+    for idx in pool:
+        title = index.titles[idx]
+        title_key = field_key(title)
+        folded = fold_punct(title)
+        hits = 0
+        for key in keys:
+            if key in title_key:
+                hits += 1
+                continue
+            folded_key = fold_punct(key)
+            if len(folded_key) >= 8 and folded_key in folded:
+                hits += 1
+        raw[idx] = hits / len(keys)
+    values = list(raw.values())
+    lo = min(values)
+    hi = max(values)
+    if hi - lo < 1e-9:
+        return {idx: 0.0 for idx in pool}
+    return {idx: (value - lo) / (hi - lo) for idx, value in raw.items()}
+
+
+def exclusive_bonus(
+    index: ContestIndex,
+    idx: int,
+    tokens: Sequence[str],
+    df: Mapping[str, int],
+) -> float:
+    """1.0 if this product is the only hard-pool hit for a distinctive token."""
+
+    bag = index.token_sets[idx]
+    for token in tokens:
+        if df.get(token, 0) == 1 and token in bag:
+            return 1.0
+    return 0.0
 
 
 def slots_are_generic(slots: Sequence[Slot]) -> bool:
@@ -467,6 +783,13 @@ def should_withhold(
         and config.dump_slots > 0
         and len(state.active) >= config.dump_slots
         and 0 < working <= config.dump_pool_cap
+    ):
+        return False
+    if (
+        early_ok
+        and config.distinctive_early_cap > 0
+        and distinctive_slot_tokens(state.active)
+        and 0 < working <= config.distinctive_early_cap
     ):
         return False
     return working > config.gate_size

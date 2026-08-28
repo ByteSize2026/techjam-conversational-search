@@ -50,6 +50,10 @@ class ContestConfig:
     # Recommend if the working pool is at most dump_pool_cap. 0 disables.
     dump_slots: int = 0
     dump_pool_cap: int = 40
+    # If >0, recommend when the working pool is this small and at least one
+    # disclosed slot has a non-generic token (not cotton/color/imported).
+    # Generic-only conjunctions still wait for gate / min_slots.
+    distinctive_early_cap: int = 0
     # MiniLM cosine on the hard pool only. 0 disables; missing weights fall
     # back to the lexical/popularity score. Keep <=0.1 — classmate w=0.45 hurt.
     w_dense: float = 0.0
@@ -65,6 +69,44 @@ class ContestConfig:
     # (cotton/imported/color). Saves pop-rank-8 generic misses without
     # blocking distinctive promotions like "rubber sole".
     dense_skip_generic: bool = False
+    # If >0, still run MiniLM on generic slots when the working pool is
+    # this small. 0 keeps skip-generic absolute. Pool 20 / pop-8 misses
+    # must stay above this cap.
+    dense_generic_cap: int = 0
+    # Skip MiniLM when every hard-pool item has the same exact-line score.
+    # True clones share feature bullets; extra tiny-pool cosine then dethrones
+    # the popularity leader. 0/False keeps MiniLM. Distinctive line variance
+    # still runs MiniLM (rubber-sole / 0090).
+    dense_skip_field_flat: bool = False
+    # Extra MiniLM weight when 2..dense_tiny_cap. 0 disables.
+    w_dense_tiny: float = 0.0
+    dense_tiny_cap: int = 6
+    # Extra MiniLM also on larger distinctive pools when the top-two
+    # popularity gap is below this margin. 0 disables the near-tie path.
+    dense_tie_margin: float = 0.0
+    dense_tie_cap: int = 20
+    # IDF of distinctive disclosed tokens inside the hard pool only.
+    # 0 disables. Small weight: popularity stays the main sort key.
+    w_idf: float = 0.0
+    idf_pool_limit: int = 40
+    # 1.0 if this product uniquely holds a distinctive disclosed token
+    # (df==1 in the hard pool). Different from smoothed IDF. 0 disables.
+    w_exclusive: float = 0.0
+    # Okapi BM25 on distinctive slot tokens after AND. IDF is catalog-wide
+    # (pool df is ~N after conjunction). 0 disables.
+    w_bm25: float = 0.0
+    bm25_pool_limit: int = 40
+    # Hard-pool title uniqueness: share of non-chrome title tokens that appear
+    # in only one pool title. Not constraint coverage and not query IDF.
+    w_uniq: float = 0.0
+    uniq_pool_limit: int = 40
+    # Exact feature-bullet / details-line match of disclosed slots. 0 disables.
+    w_field: float = 0.0
+    field_pool_limit: int = 40
+    # Distinctive disclosed slot as an exact title substring. Not token
+    # coverage (rejected w_title). Skip cotton/color/imported slots. 0 disables.
+    w_phrase: float = 0.0
+    phrase_pool_limit: int = 40
 
     w_constraint: float = 2.6
     w_lexical: float = 1.0
@@ -102,10 +144,50 @@ PUBLIC = ContestConfig(
     evidence_pool_cap=20,
     dump_slots=4,
     dump_pool_cap=80,
+    # Distinctive early-rank cap=10: public 0.953914 (MTTC 2.505) but
+    # holdout 0.88453 / MRR 0.758 < 0.8888. Keep off.
+    distinctive_early_cap=0,
     # MiniLM cosine on hard pools of size 2..80. Missing weights → 0.
     w_dense=0.1,
     dense_pool_limit=80,
     dense_pop_floor=0,
     dense_rrf_k=0,
     dense_skip_generic=True,
+    dense_generic_cap=0,
+    # Tiny-pool MiniLM extra weight. generic_cap=6 + tiny=0.25: holdout
+    # 0.8920 but public MRR 0.9467→0.915. Distinctive-only tiny=0.12:
+    # public 0.951914 / holdout 0.890778 Hit 0.980. Keep distinctive-only.
+    w_dense_tiny=0.12,
+    dense_tiny_cap=6,
+    # Near-tie MiniLM extra (margin=0.04, cap=20): public 0.951677,
+    # holdout 0.890599 not > 0.8908. Keep off.
+    dense_tie_margin=0.0,
+    dense_tie_cap=20,
+    # Skip MiniLM on exact-line ties: public 0.955864 / holdout 0.893543
+    # rank1 142→139. Keep off.
+    dense_skip_field_flat=False,
+    # Hard-pool IDF trial w=0.15: public Hit 1.0 / 0.953414 unchanged;
+    # holdout Hit 0.980 / 0.888778 (not strictly > 0.8888). Keep off.
+    w_idf=0.0,
+    idf_pool_limit=40,
+    # Exclusive df=1 trial w=0.25: public 0.953414 / holdout 0.888778, not > 0.8888.
+    w_exclusive=0.0,
+    # Hard-pool BM25 w=0.12: public 0.950489 Hit 1.0, holdout Hit 0.97 / 0.88624
+    # (extra misses 0067/0106). w=0.20 dropped public Hit and 0090. Keep off.
+    w_bm25=0.0,
+    bm25_pool_limit=40,
+    # Title uniqueness w=0.15: public 0.946664 Hit 1.0, holdout Hit 0.97 /
+    # 0.886084 (dropped 0067/0090). Keep off.
+    w_uniq=0.0,
+    uniq_pool_limit=40,
+    # Exact feature/details line. w=0.15: public 0.956025 / holdout 0.894705.
+    # w=0.25: public 0.956275 / holdout 0.895843.
+    # w=0.35: public 0.9549 Hit 1.0 (MRR 0.95625→0.9517) / holdout 0.897918
+    # Hit 0.980 rank1 144. Promote on holdout gate; public Hit held.
+    w_field=0.35,
+    field_pool_limit=40,
+    # Distinctive title phrase w=0.15: public 0.9549 Hit 1.0 (unchanged) /
+    # holdout 0.898118 Hit 0.980. Promote; skip cotton/color/imported slots.
+    w_phrase=0.15,
+    phrase_pool_limit=40,
 )

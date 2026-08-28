@@ -16,6 +16,27 @@ NO_PREF_RE = re.compile(
     r"i don't have a preference for\s+(.+?);\s*please use your judgment", re.I
 )
 OVERRIDE_RE = re.compile(r"ignore my earlier preference\.\s*what i need is:\s*(.+?)\.?$", re.I)
+# Official override stays referenced_preference_replace. These extra scopes
+# are for non-simulator phrasing; they must not fire on the evaluator template.
+_GLOBAL_RESET_RE = re.compile(
+    r"\b(?:forget|ignore|disregard)\s+(?:everything|all(?:\s+(?:of\s+)?"
+    r"(?:this|that|my\s+preferences?|requirements?))?)\b"
+    r"|\bstart(?:\s+all)?\s+over\b"
+    r"|\bcompletely\s+different\s+(?:request|thing|search|product)\b",
+    re.I,
+)
+_ATTRIBUTE_REPLACEMENT_RE = re.compile(
+    r"\b(?:change|switch|replace|update|make)\s+(?:my\s+)?(?:the\s+)?"
+    r"(?P<attribute>category|material|color|colour|size|sizing|style|brand|"
+    r"budget|price|feature|use\s+case|use_case)\s+"
+    r"(?:to|with|as)\s+(?P<new>[^.!?;,]+)",
+    re.I,
+)
+_VALUE_REPLACEMENT_RE = re.compile(
+    r"\b(?:prefer|want|need|use)\s+(?P<new>[^.!?;,]+?)\s+"
+    r"(?:instead\s+of|rather\s+than)\s+(?P<old>[^.!?;,]+)",
+    re.I,
+)
 ASK_MORE_RE = re.compile(r"ask me about one specific attribute", re.I)
 RETRACT_CUES = (
     "ignore my earlier",
@@ -48,6 +69,7 @@ class Reply:
     kind: str
     attribute: str | None = None
     constraints: list[str] = field(default_factory=list)
+    scope: str = "none"
 
 
 def _clean(value: str) -> str:
@@ -153,13 +175,45 @@ def parse_opening(message: str, bucket_lookup: dict[str, str]) -> Opening:
     return Opening(category=category, scenario=scenario, constraints=constraints)
 
 
+def _need_payload(text: str) -> list[str]:
+    match = re.search(r"what i need is:\s*(.+)$", text, re.I)
+    if match:
+        return _split(match.group(1))
+    return _content(_clean(text))
+
+
 def parse_reply(message: str) -> Reply:
     text = normalise(message)
     if not text:
         return Reply(kind="unknown")
+    if _GLOBAL_RESET_RE.search(text):
+        return Reply(kind="override", constraints=_need_payload(text), scope="global_reset")
     match = OVERRIDE_RE.search(text)
     if match:
-        return Reply(kind="override", constraints=_split(match.group(1)))
+        return Reply(
+            kind="override",
+            constraints=_split(match.group(1)),
+            scope="referenced_preference_replace",
+        )
+    attr_match = _ATTRIBUTE_REPLACEMENT_RE.search(text)
+    if attr_match:
+        value = _clean(attr_match.group("new"))
+        value = re.split(r"\b(?:instead\s+of|rather\s+than)\b", value, maxsplit=1, flags=re.I)[0]
+        value = _clean(value)
+        return Reply(
+            kind="override",
+            constraints=[value] if value else [],
+            attribute=_attribute(attr_match.group("attribute")),
+            scope="attribute_replace",
+        )
+    value_match = _VALUE_REPLACEMENT_RE.search(text)
+    if value_match:
+        value = _clean(value_match.group("new"))
+        return Reply(
+            kind="override",
+            constraints=[value] if value else [],
+            scope="attribute_replace",
+        )
     match = NO_PREF_RE.search(text)
     if match:
         return Reply(kind="boundary", attribute=_attribute(match.group(1)))
@@ -180,7 +234,11 @@ def parse_reply(message: str) -> Reply:
                 payload = payload[index + len(cue) :]
                 break
         payload = re.sub(r"^(?:.*?\bis\b|.*?\bneed\b)[:\s]*", "", payload, count=1)
-        return Reply(kind="override", constraints=_content(_clean(payload)))
+        return Reply(
+            kind="override",
+            constraints=_content(_clean(payload)),
+            scope="referenced_preference_replace",
+        )
     if any(cue in text for cue in NEGATION_CUES):
         attribute = _attribute_in(text)
         boundary = any(word in text for word in ("judgment", "judgement", "up to you"))

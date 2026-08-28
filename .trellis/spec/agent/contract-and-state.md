@@ -15,17 +15,17 @@ respond(self, session_id: str, user_message: str, turn: int, top_k: int) -> dict
 
 ## 实现模块边界
 
-`starter/agent.py` 是提交入口和稳定 facade：它负责依赖组装、会话生命周期、
-整轮编排与最终诊断。可复用的实现职责位于 `starter/shopping_agent/`：
+`starter/agent.py` 的评分入口是 `class Agent(ContestAgent)`，配置为 `PUBLIC`。
+可复用实现在 `starter/shopping_agent/contest_*.py`：
 
-- `retrieval.py` 负责路由召回、类目配额、候选合并、多样化和召回诊断。
-- `ranking.py` 负责候选统计、词法证据、确定性特征融合与排序置信证据。
-- `response.py` 负责语义排序适配、usage/failure 提取、fallback 和响应合同校验。
+- `contest_dialogue.py` 解析模拟器模板，并把 override 分成 referenced / attribute_replace / global_reset。
+- `contest_slots.py` 会话槽位：官方路径 decay 0.5 后继续 AND；同属性替换才作废 typed 槽；global_reset 才清空约束。
+- `contest_index.py` / `contest_rank.py` 类目锁、逐字 AND、热度优先与可选 MiniLM。
+- `contest_response.py` 响应合同守卫：非法 `ask_attribute`、catalog 外 ID、坏 usage 不得漏出。
+- `contest_dense.py` 可选 MiniLM；缺权重为 0，并设置 `HF_HUB_OFFLINE`，不隐式下载。
 
-不要把这些实现重新堆回提交 facade。仓库内测试和 benchmark 会直接调用或替换
-`Agent._retrieve`、`_feature_rank`、`_rank_evidence`、`_valid_ids` 等兼容入口；
-重构内部组件时应保留这些薄委托，并让整轮编排继续通过实例方法调用，使运行时
-替换仍然生效。
+`shopping_agent` 里的 `retrieval.py` / `ranking.py` / `response.py` 属于 `LegacyAgent`
+（unittest 与 `legacy/qwen`），评估器不加载那条路径。不要把 BM25/标题覆盖权重搬进 PUBLIC。
 
 ## 每轮响应合同
 

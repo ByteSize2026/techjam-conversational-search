@@ -1,8 +1,9 @@
 """Scored shopping agent: always ask ``other``, verbatim AND, popularity-first.
 
 ``starter.agent.Agent`` subclasses this with ``PUBLIC``. Local numbers:
-public-200 Hit 1.000 / 0.9534; holdout-200 Hit 0.980 / 0.8888. Reports in
-``report/``.
+public-200 Hit 1.000 / 0.9549; holdout-200 Hit 0.980 / 0.8981. Reports in
+``report/``. Override scopes and the response guard are borrowed from the
+group ``main`` pipeline; ranking weights are not.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from .contest_config import ContestConfig, PUBLIC
 from .contest_dialogue import parse_opening, parse_reply
 from .contest_index import ContestIndex
 from .contest_rank import candidate_pool, defer_for_overlap, hard_pool, pad, rank, should_withhold
+from .contest_response import guard_response
 from .contest_slots import ContestState
 from .contest_text import CHROME
 
@@ -23,13 +25,14 @@ _OPEN_VARIANTS = (
     "Give me one more detail and I can tighten these up.",
 )
 _SPECIFIC = {
-    "material": "What material are you hoping for?",
-    "color": "Any particular colour you have in mind?",
-    "feature": "Is there a specific feature that matters most to you?",
-    "style": "What style or cut are you going for?",
-    "size": "Is there a size or fit you need?",
-    "use_case": "What will you mainly be using it for?",
-    "budget": "Roughly what budget are you working with?",
+    "material": "What material or fabric should I match?",
+    "color": "Any colour or print I should lock in?",
+    "feature": "What construction or care detail matters most?",
+    "style": "What cut or style should I prefer?",
+    "size": "Is there a size or fit I must keep?",
+    "use_case": "What will you mainly use it for?",
+    "budget": "What budget should I stay near?",
+    "brand": "Any brand I should stick to?",
 }
 
 
@@ -56,9 +59,10 @@ class ContestAgent:
 
     def respond(self, session_id: str, user_message: str, turn: int, top_k: int) -> dict:
         try:
-            return self._respond(session_id, user_message, turn, top_k)
+            payload = self._respond(session_id, user_message, turn, top_k)
         except Exception:
-            return self._fallback(top_k)
+            payload = self._fallback(top_k)
+        return guard_response(self.index, payload, top_k, fallback_fn=self._fallback)
 
     def _state(self, session_id: str) -> ContestState:
         state = self._sessions.get(session_id)
@@ -111,6 +115,11 @@ class ContestAgent:
             "withhold": withhold,
             "ask": ask,
             "gate_size": self.config.gate_size,
+            "intent_scope": state.intent_scope,
+            "intent_epoch": state.intent_epoch,
+            "superseded": list(state.last_superseded),
+            "intent": state.intent_snippets(),
+            "ask_focus": state.next_ask_focus() if ask else None,
         }
         return {
             "message": self._message(state, ask, withhold, len(ranked)),
@@ -122,9 +131,12 @@ class ContestAgent:
     def _apply_reply(self, state: ContestState, message: str) -> None:
         reply = parse_reply(message)
         if reply.kind == "override":
-            state.decay_provisional(self.config.override_decay)
-            state.override_applied = True
-            state.add_constraints(reply.constraints, turn=state.turn)
+            state.apply_override(
+                reply.constraints,
+                turn=state.turn,
+                scope=reply.scope,
+                decay=self.config.override_decay,
+            )
             return
         if reply.kind == "disclosure":
             state.add_constraints(reply.constraints, turn=state.turn)
@@ -142,18 +154,49 @@ class ContestAgent:
             return None
         if "other" in state.exhausted:
             return None
+        # Simulator discloses verbatim intent-card lines only on ``other``.
+        # The spoken question can name a missing facet; the field stays other.
         return "other"
 
+    def _remembered(self, state: ContestState) -> str:
+        snippets = state.intent_snippets()
+        if not snippets:
+            tags = state.profile_tags()[:2]
+            if tags:
+                return "your " + " and ".join(tags) + " preferences"
+            return ""
+        if len(snippets) == 1:
+            return snippets[0]
+        return snippets[0] + " — " + "; ".join(snippets[1:])
+
+    def _focus_question(self, state: ContestState) -> str:
+        focus = state.next_ask_focus()
+        if focus in _SPECIFIC:
+            return _SPECIFIC[focus]
+        return _OPEN_VARIANTS[(state.turn - 1) % len(_OPEN_VARIANTS)]
+
     def _message(self, state: ContestState, ask: str | None, withhold: bool, count: int) -> str:
+        remembered = self._remembered(state)
+        if state.intent_scope != "none" and state.last_superseded:
+            dropped = state.last_superseded[0]
+            if len(dropped) > 40:
+                dropped = dropped[:37] + "..."
+            lead = f"I'll switch away from {dropped}. "
+        elif state.intent_scope != "none" and state.intent_epoch:
+            lead = "I'll follow the updated requirement. "
+        else:
+            lead = ""
+        if remembered:
+            lead += f"Matching {remembered}. "
         if withhold:
-            return _OPEN_VARIANTS[(state.turn - 1) % len(_OPEN_VARIANTS)]
+            return (lead + self._focus_question(state)).strip()
         if ask == "other":
-            return "Here are my best matches so far. " + _OPEN_VARIANTS[(state.turn - 1) % len(_OPEN_VARIANTS)]
+            return (lead + "Here are the closest matches so far. " + self._focus_question(state)).strip()
         if ask and ask in _SPECIFIC:
-            return "Here are my best matches so far. " + _SPECIFIC[ask]
+            return (lead + "Here are the closest matches so far. " + _SPECIFIC[ask]).strip()
         if count:
-            return "Here are the closest matches I found."
-        return "I could not find a close match yet. What else matters?"
+            return (lead + "Here are the closest matches I found.").strip()
+        return (lead + "I could not find a close match yet. What else matters?").strip()
 
     def _fallback(self, top_k: int) -> dict:
         limit = min(max(int(top_k) if isinstance(top_k, int) else 10, 0), 10)
@@ -162,4 +205,5 @@ class ContestAgent:
             "message": "Let me try again. Which detail matters most to you?",
             "ask_attribute": "other",
             "recommendations": [{"parent_asin": item} for item in ids],
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0},
         }

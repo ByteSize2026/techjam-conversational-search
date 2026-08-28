@@ -1,0 +1,38 @@
+scenario=intent_override  sample=public_0002
+target=B071X54486  Hide & Drink, Rustic Handmade Full Grain Leather Men's Belt, Two Row Stitch Styl
+profile=Prior purchases emphasize fit, comfort, style; ratings are critical.
+
+--- turn 1 ---
+customer: I'm looking for Accessories Belts. Buckle closure
+agent:    Matching Accessories Belts — buckle closure. What material or fabric should I match?
+ask=other  pool=258  hard=111  withhold=True  intent=['Accessories Belts', 'buckle closure']  scope=none  12ms
+usage prompt=0 completion=0
+
+--- turn 2 ---
+customer: For that, what matters is: leather; 100% Leather.
+agent:    Matching Accessories Belts — buckle closure; leather; 100% leather. Any colour or print I should lock in?
+ask=other  pool=258  hard=22  withhold=True  intent=['Accessories Belts', 'buckle closure', 'leather', '100% leather']  scope=none  18ms
+usage prompt=0 completion=0
+[simulator] intent override
+
+--- turn 3 ---
+customer: Actually, ignore my earlier preference. What I need is: leather.
+agent:    I'll follow the updated requirement. Matching Accessories Belts — buckle closure; leather; 100% leather. Any colour or print I should lock in?
+ask=other  pool=258  hard=22  withhold=True  intent=['Accessories Belts', 'buckle closure', 'leather', '100% leather']  scope=referenced_preference_replace  19ms
+usage prompt=0 completion=0
+
+--- turn 4 ---
+customer: For that, what matters is: Imported; Buckle closure.
+agent:    I'll follow the updated requirement. Matching Accessories Belts — buckle closure; leather; 100% leather. Here are the closest matches so far. Any colour or print I should lock in?
+ask=other  pool=258  hard=7  withhold=False  intent=['Accessories Belts', 'buckle closure', 'leather', '100% leather']  scope=referenced_preference_replace  120385ms
+usage prompt=0 completion=0
+   1. B071X54486  Hide & Drink, Rustic Handmade Full Grain Leather Men's Belt, Two  <= TARGET
+   2. B072M9PJ3H  find. Men's Leather Formal Belt
+   3. B016B07WZI  Dona Michi MEN'S WORK BELT BASKETWEAVE UNIFORM 1 3/4" WIDE HEAVY
+   4. B01N2LFP2K  Fossil Men's Griffin Belt-Cordovan
+   5. B0C5F4BMLV  X-COSTUME Men Belt Adult Waistband Replica Halloween Cosplay Cos
+   6. B07GDTGWX1  The Savile Row Company Mens Dress Belt Leather 35mm 1.35" wide T
+   7. B00I1080VW  Nyfashion101 Women's Basic Leather Dressy Belt w/ Round Buckle H
+
+--- outcome ---
+HIT turn=4 rank=1

@@ -21,10 +21,10 @@ CLASSMATE_ROOT = ROOT.parent / "classmate-buyteSize" / "techjam-conversational-s
 PUBLIC_SCORE = {
     "source": "results_contest_public.json",
     "hit_rate_at_10": 1.0,
-    "mrr": 0.946714,
+    "mrr": 0.951667,
     "mttc": 2.53,
     "efficiency": 0.847,
-    "recommended_technical_score": 0.953414,
+    "recommended_technical_score": 0.9549,
 }
 CLASSMATE_PUBLIC = {
     "source": "classmate-buyteSize/result/report.md (full LLM+bge on public 200)",

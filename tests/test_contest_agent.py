@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from dataclasses import replace
@@ -12,6 +13,7 @@ from starter.shopping_agent.contest_dense import PoolDenseEncoder, set_encoder
 from starter.shopping_agent.contest_rerank import PoolReranker, set_reranker
 from starter.shopping_agent.contest_dialogue import parse_opening, parse_reply
 from starter.shopping_agent.contest_index import ContestIndex
+from starter.shopping_agent.contest_response import guard_response
 from starter.shopping_agent.contest_rank import conjunction_asins, hard_pool, rank
 from starter.shopping_agent.contest_slots import ContestState
 from starter.shopping_agent.contest_text import constraint_matches, product_search_text
@@ -79,6 +81,16 @@ class ContestAgentTests(unittest.TestCase):
         self.assertEqual(agent.config.gate_size, PUBLIC.gate_size)
         self.assertTrue(agent.config.dense_skip_generic)
         self.assertEqual(agent.config.w_title, 0.0)
+        self.assertEqual(agent.config.distinctive_early_cap, 0)
+        self.assertEqual(agent.config.dense_generic_cap, 0)
+        self.assertEqual(agent.config.w_dense_tiny, 0.12)
+        self.assertEqual(agent.config.dense_tiny_cap, 6)
+        self.assertEqual(agent.config.dense_tie_margin, 0.0)
+        self.assertEqual(agent.config.w_bm25, 0.0)
+        self.assertEqual(agent.config.w_uniq, 0.0)
+        self.assertEqual(agent.config.w_field, 0.35)
+        self.assertFalse(agent.config.dense_skip_field_flat)
+        self.assertEqual(agent.config.w_phrase, 0.15)
 
     def test_opening_templates(self) -> None:
         lookup = {"shirts": "Shirts", "boots": "Boots"}
@@ -93,6 +105,7 @@ class ContestAgentTests(unittest.TestCase):
         )
         self.assertEqual(override.kind, "override")
         self.assertEqual(override.constraints, ["leather"])
+        self.assertEqual(override.scope, "referenced_preference_replace")
         opening_override = parse_opening(
             "I'm looking for Underwear Undershirts. Imported",
             {"underwear undershirts": "Underwear Undershirts", "shirts": "Shirts"},
@@ -127,6 +140,154 @@ class ContestAgentTests(unittest.TestCase):
         texts = {item.text.lower(): item.weight for item in state.active}
         self.assertIn("leather", texts)
         self.assertEqual(texts.get("cotton"), 0.5)
+        self.assertEqual(state.intent_scope, "referenced_preference_replace")
+        self.assertEqual(state.intent_epoch, 1)
+
+    def test_attribute_replace_deactivates_same_typed_slot(self) -> None:
+        agent = ContestAgent(self.catalog_path, config=KHANNA)
+        agent.reset("s", {})
+        agent.respond("s", "I'm looking for shirts. A key requirement is: black.", 1, 10)
+        agent.respond("s", "Please change the color to blue.", 2, 10)
+        state = agent._sessions["s"]
+        self.assertEqual(state.intent_scope, "attribute_replace")
+        active = {item.text.lower(): item.attribute for item in state.active}
+        self.assertIn("blue", active)
+        self.assertNotIn("black", active)
+        self.assertEqual(state.category, "Shirts")
+
+    def test_global_reset_clears_constraints_keeps_category(self) -> None:
+        agent = ContestAgent(self.catalog_path, config=KHANNA)
+        agent.reset("s", {})
+        agent.respond("s", "I'm looking for shirts. A key requirement is: cotton.", 1, 10)
+        agent.respond("s", "Forget everything. What I need is: leather.", 2, 10)
+        state = agent._sessions["s"]
+        self.assertEqual(state.intent_scope, "global_reset")
+        texts = {item.text.lower() for item in state.active}
+        self.assertEqual(texts, {"leather"})
+        self.assertEqual(state.category, "Shirts")
+
+    def test_guard_drops_invalid_ids_and_illegal_ask(self) -> None:
+        index = ContestIndex(self.catalog_path)
+        guarded = guard_response(
+            index,
+            {
+                "message": "ok",
+                "ask_attribute": "not-a-slot",
+                "recommendations": [
+                    {"parent_asin": "A"},
+                    {"parent_asin": "ZZZ"},
+                    "A",
+                    {"parent_asin": "B"},
+                ],
+                "usage": {"prompt_tokens": 0, "completion_tokens": 0},
+            },
+            10,
+        )
+        self.assertEqual(guarded["message"], "ok")
+        self.assertIsNone(guarded["ask_attribute"])
+        self.assertEqual(
+            [item["parent_asin"] for item in guarded["recommendations"]],
+            ["A", "B"],
+        )
+        self.assertEqual(guarded["usage"], {"prompt_tokens": 0, "completion_tokens": 0})
+
+    def test_message_remembers_intent_and_still_asks_other(self) -> None:
+        agent = ContestAgent(self.catalog_path, config=KHANNA)
+        agent.reset("s", {"preference_tags": ["comfort"]})
+        response = agent.respond(
+            "s",
+            "I'm looking for shirts. A key requirement is: cotton.",
+            1,
+            10,
+        )
+        self.assertEqual(response["ask_attribute"], "other")
+        lowered = response["message"].lower()
+        self.assertIn("cotton", lowered)
+        self.assertIn("shirts", lowered)
+        agent.respond(
+            "s",
+            "Actually, ignore my earlier preference. What I need is: leather.",
+            2,
+            10,
+        )
+        state = agent._sessions["s"]
+        self.assertEqual(state.intent_snippets()[-1].lower(), "leather")
+        self.assertTrue(any(event["kind"] == "referenced_preference_replace" for event in state.intent_log))
+
+    def test_distinctive_early_commit_ranks_small_hard_pool(self) -> None:
+        rows = []
+        for idx in range(8):
+            rows.append(
+                {
+                    "parent_asin": f"R{idx}",
+                    "title": f"Trail shoe {idx}",
+                    "features": ["rubber sole", "leather"],
+                    "description": ["hiking"],
+                    "categories": ["Shoes"],
+                    "details": {"department": "unisex"},
+                    "store": f"Store{idx}",
+                    "price": 40.0 + idx,
+                    "average_rating": 4.0,
+                    "rating_number": 20 + idx,
+                }
+            )
+        path = Path(self.tempdir.name) / "distinctive_early.jsonl"
+        path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        config = ContestConfig(
+            gate_size=5,
+            hard_filter=True,
+            gate_before_override=True,
+            pad_to_top_k=False,
+            distinctive_early_cap=10,
+        )
+        agent = ContestAgent(path, config=config)
+        agent.reset("s", {})
+        first = agent.respond(
+            "s",
+            "I'm looking for shoes. A key requirement is: rubber sole.",
+            1,
+            10,
+        )
+        self.assertEqual(first["ask_attribute"], "other")
+        self.assertEqual(len(first["recommendations"]), 8)
+        self.assertIn("rubber", first["message"].lower())
+
+    def test_generic_cotton_does_not_early_commit(self) -> None:
+        rows = []
+        for idx in range(8):
+            rows.append(
+                {
+                    "parent_asin": f"C{idx}",
+                    "title": f"Cotton tee {idx}",
+                    "features": ["cotton", "imported"],
+                    "description": ["shirt"],
+                    "categories": ["Shirts"],
+                    "details": {"department": "unisex"},
+                    "store": f"Store{idx}",
+                    "price": 15.0 + idx,
+                    "average_rating": 4.0,
+                    "rating_number": 20 + idx,
+                }
+            )
+        path = Path(self.tempdir.name) / "generic_early.jsonl"
+        path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        config = ContestConfig(
+            gate_size=5,
+            hard_filter=True,
+            gate_before_override=True,
+            pad_to_top_k=False,
+            distinctive_early_cap=10,
+        )
+        agent = ContestAgent(path, config=config)
+        agent.reset("s", {})
+        first = agent.respond(
+            "s",
+            "I'm looking for shirts. A key requirement is: cotton.",
+            1,
+            10,
+        )
+        self.assertEqual(first["recommendations"], [])
+        self.assertEqual(first["ask_attribute"], "other")
 
     def test_product_own_feature_detail_and_budget_stay_in_conjunction_pool(self) -> None:
         rows = [
@@ -294,8 +455,91 @@ class ContestAgentTests(unittest.TestCase):
         generic.add_constraints(["cotton"], turn=1)
         generic_first = [index.ids[idx] for idx in rank(index, generic, titled, pool, limit=2)]
         self.assertEqual(generic_first[0], "HOT")
-        public_first = [index.ids[idx] for idx in rank(index, state, replace(PUBLIC, w_dense=0), pool, limit=2)]
+        public_first = [
+            index.ids[idx]
+            for idx in rank(index, state, replace(PUBLIC, w_dense=0, w_phrase=0.0), pool, limit=2)
+        ]
         self.assertEqual(public_first[0], "HOT")
+
+    def test_tiny_pool_title_tie_breaks_near_popularity_clones(self) -> None:
+        rows = [
+            {
+                "parent_asin": "HOT",
+                "title": "Everyday cotton shirt",
+                "features": ["ribbed crew neck", "pre-shrunk"],
+                "description": ["basic tee"],
+                "categories": ["Shirts"],
+                "details": {"department": "mens"},
+                "store": "HotBrand",
+                "price": 18.0,
+                "average_rating": 4.0,
+                "rating_number": 40,
+            },
+            {
+                "parent_asin": "TARGET",
+                "title": "Ribbed crew neck cotton shirt",
+                "features": ["ribbed crew neck", "pre-shrunk"],
+                "description": ["basic tee"],
+                "categories": ["Shirts"],
+                "details": {"department": "mens"},
+                "store": "QuietBrand",
+                "price": 18.0,
+                "average_rating": 4.0,
+                "rating_number": 25,
+            },
+        ]
+        for idx in range(4):
+            rows.append(
+                {
+                    "parent_asin": f"CLONE{idx}",
+                    "title": f"Cotton layer {idx}",
+                    "features": ["ribbed crew neck", "pre-shrunk"],
+                    "description": ["basic tee"],
+                    "categories": ["Shirts"],
+                    "details": {"department": "mens"},
+                    "store": f"Store{idx}",
+                    "price": 18.0,
+                    "average_rating": 4.0,
+                    "rating_number": 10 + idx,
+                }
+            )
+        path = Path(self.tempdir.name) / "tiny_title.jsonl"
+        path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        index = ContestIndex(path)
+        state = ContestState(session_id="s")
+        state.category = "Shirts"
+        state.add_constraints(["ribbed crew neck"], turn=1)
+        pool = list(range(len(index)))
+        self.assertLessEqual(len(pool), 6)
+        tiny = replace(PUBLIC, w_dense=0.0, w_title=0.12, title_pool_limit=6, w_phrase=0.0)
+        off = replace(PUBLIC, w_dense=0.0, w_title=0.0, title_pool_limit=6, w_phrase=0.0)
+        self.assertEqual(index.ids[rank(index, state, off, pool, limit=1)[0]], "HOT")
+        self.assertEqual(index.ids[rank(index, state, tiny, pool, limit=1)[0]], "TARGET")
+        wide = replace(PUBLIC, w_dense=0.0, w_title=0.12, title_pool_limit=6, w_phrase=0.0)
+        big_rows = rows + [
+            {
+                "parent_asin": f"EXTRA{idx}",
+                "title": f"Spare cotton {idx}",
+                "features": ["ribbed crew neck"],
+                "description": ["tee"],
+                "categories": ["Shirts"],
+                "details": {"department": "mens"},
+                "store": "X",
+                "price": 18.0,
+                "average_rating": 4.0,
+                "rating_number": 8,
+            }
+            for idx in range(3)
+        ]
+        big_path = Path(self.tempdir.name) / "wide_title.jsonl"
+        big_path.write_text("".join(json.dumps(row) + "\n" for row in big_rows), encoding="utf-8")
+        big_index = ContestIndex(big_path)
+        big_pool = list(range(len(big_index)))
+        self.assertGreater(len(big_pool), 6)
+        self.assertEqual(
+            big_index.ids[rank(big_index, state, wide, big_pool, limit=1)[0]],
+            "HOT",
+        )
 
     def test_three_slots_recommend_inside_evidence_cap_despite_gate(self) -> None:
         rows = []
@@ -459,10 +703,623 @@ class ContestAgentTests(unittest.TestCase):
             w_dense=0.85,
             dense_pool_limit=80,
         )
-        popular_first = [index.ids[idx] for idx in rank(index, state, replace(PUBLIC, w_dense=0), pool, limit=2)]
+        popular_first = [
+            index.ids[idx]
+            for idx in rank(index, state, replace(PUBLIC, w_dense=0, w_phrase=0.0), pool, limit=2)
+        ]
         dense_first = [index.ids[idx] for idx in rank(index, state, dense, pool, limit=2)]
         self.assertEqual(popular_first[0], "HOT")
         self.assertEqual(dense_first[0], "TARGET")
+
+    def test_near_tie_minilm_extra_skips_popularity_blowout(self) -> None:
+        def rows(hot_n: int, cold_n: int) -> list[dict]:
+            data = [
+                {
+                    "parent_asin": "HOT",
+                    "title": "Everyday cotton shirt",
+                    "features": ["ribbed crew neck"],
+                    "description": ["basic tee"],
+                    "categories": ["Shirts"],
+                    "details": {"department": "mens"},
+                    "store": "HotBrand",
+                    "price": 18.0,
+                    "average_rating": 4.8,
+                    "rating_number": hot_n,
+                },
+                {
+                    "parent_asin": "TARGET",
+                    "title": "Ribbed crew neck cotton shirt",
+                    "features": ["ribbed crew neck"],
+                    "description": ["basic tee"],
+                    "categories": ["Shirts"],
+                    "details": {"department": "mens"},
+                    "store": "QuietBrand",
+                    "price": 18.0,
+                    "average_rating": 4.8,
+                    "rating_number": cold_n,
+                },
+            ]
+            for idx in range(6):
+                data.append(
+                    {
+                        "parent_asin": f"C{idx}",
+                        "title": f"Cotton layer {idx}",
+                        "features": ["ribbed crew neck"],
+                        "description": ["tee"],
+                        "categories": ["Shirts"],
+                        "details": {"department": "mens"},
+                        "store": f"S{idx}",
+                        "price": 18.0,
+                        "average_rating": 4.0,
+                        "rating_number": 10 + idx,
+                    }
+                )
+            return data
+
+        def encode(texts: list[str]) -> list[list[float]]:
+            vectors = []
+            for text in texts:
+                lowered = text.lower()
+                if "ribbed crew neck" in lowered and "everyday" not in lowered and "layer" not in lowered:
+                    vectors.append([1.0, 0.0])
+                else:
+                    vectors.append([0.0, 1.0])
+            return vectors
+
+        set_encoder(PoolDenseEncoder(encode=encode))
+        trial = replace(
+            PUBLIC,
+            w_dense=0.01,
+            w_dense_tiny=0.35,
+            dense_tiny_cap=6,
+            dense_tie_margin=0.05,
+            dense_tie_cap=20,
+            dense_skip_generic=False,
+            w_lexical=0.0,
+            w_constraint=0.0,
+            w_profile=0.0,
+        )
+        tied_path = Path(self.tempdir.name) / "tie_dense.jsonl"
+        tied_path.write_text("".join(json.dumps(row) + "\n" for row in rows(50, 45)), encoding="utf-8")
+        tied_index = ContestIndex(tied_path)
+        state = ContestState(session_id="s")
+        state.category = "Shirts"
+        state.add_constraints(["ribbed crew neck"], turn=1)
+        tied_pool = list(range(len(tied_index)))
+        self.assertGreater(len(tied_pool), 6)
+        self.assertEqual(
+            tied_index.ids[rank(tied_index, state, trial, tied_pool, limit=1)[0]],
+            "TARGET",
+        )
+        blow_path = Path(self.tempdir.name) / "blow_dense.jsonl"
+        blow_path.write_text("".join(json.dumps(row) + "\n" for row in rows(400, 20)), encoding="utf-8")
+        blow_index = ContestIndex(blow_path)
+        blow_pool = list(range(len(blow_index)))
+        self.assertEqual(
+            blow_index.ids[rank(blow_index, state, trial, blow_pool, limit=1)[0]],
+            "HOT",
+        )
+
+    def test_minilm_loader_uses_cache_then_hub(self) -> None:
+        encoder = PoolDenseEncoder()
+        calls: list[bool] = []
+
+        class DummyModel:
+            def eval(self) -> object:
+                return self
+
+        def fake_load(local_files_only: bool):
+            calls.append(local_files_only)
+            if local_files_only:
+                raise OSError("cache miss")
+            return "tok", DummyModel(), object()
+
+        encoder._load_transformers = fake_load  # type: ignore[method-assign]
+        self.assertTrue(encoder.available())
+        self.assertEqual(calls, [True, False])
+
+    def test_minilm_loader_stays_offline_when_flag_set(self) -> None:
+        previous = os.environ.get("TECHJAM_DENSE_OFFLINE")
+        os.environ["TECHJAM_DENSE_OFFLINE"] = "1"
+        self.addCleanup(
+            lambda: os.environ.pop("TECHJAM_DENSE_OFFLINE", None)
+            if previous is None
+            else os.environ.__setitem__("TECHJAM_DENSE_OFFLINE", previous)
+        )
+        encoder = PoolDenseEncoder()
+        calls: list[bool] = []
+
+        def fake_load(local_files_only: bool):
+            calls.append(local_files_only)
+            raise OSError("cache miss")
+
+        encoder._load_transformers = fake_load  # type: ignore[method-assign]
+        self.assertFalse(encoder.available())
+        self.assertEqual(calls, [True])
+
+    def test_tiny_generic_pool_can_use_minilm_without_pop_floor(self) -> None:
+        rows = [
+            {
+                "parent_asin": "HOT",
+                "title": "Everyday cotton shirt",
+                "features": ["cotton", "imported"],
+                "description": ["basic tee"],
+                "categories": ["Shirts"],
+                "details": {"Color": "Black", "department": "mens"},
+                "store": "HotBrand",
+                "price": 18.0,
+                "average_rating": 4.9,
+                "rating_number": 80,
+            },
+            {
+                "parent_asin": "TARGET",
+                "title": "Soft cotton shirt",
+                "features": ["cotton", "imported"],
+                "description": ["soft cotton shirt"],
+                "categories": ["Shirts"],
+                "details": {"Color": "Black", "department": "mens"},
+                "store": "QuietBrand",
+                "price": 18.0,
+                "average_rating": 4.8,
+                "rating_number": 40,
+            },
+        ]
+        path = Path(self.tempdir.name) / "tiny_generic_dense.jsonl"
+        path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        index = ContestIndex(path)
+        state = ContestState(session_id="s")
+        state.category = "Shirts"
+        state.add_constraints(["cotton", "imported"], turn=1)
+        pool = list(range(len(index)))
+
+        def encode(texts: list[str]) -> list[list[float]]:
+            vectors = []
+            for text in texts:
+                lowered = text.lower()
+                if "everyday" in lowered:
+                    vectors.append([0.0, 1.0])
+                else:
+                    vectors.append([1.0, 0.0])
+            return vectors
+
+        set_encoder(PoolDenseEncoder(encode=encode))
+        trial = replace(
+            PUBLIC,
+            dense_skip_generic=True,
+            dense_generic_cap=6,
+            w_dense=0.1,
+            w_dense_tiny=0.25,
+            dense_tiny_cap=6,
+        )
+        popular_first = [
+            index.ids[idx] for idx in rank(index, state, replace(PUBLIC, w_dense=0), pool, limit=2)
+        ]
+        trial_first = [index.ids[idx] for idx in rank(index, state, trial, pool, limit=2)]
+        self.assertEqual(popular_first[0], "HOT")
+        self.assertEqual(trial_first[0], "TARGET")
+        blocked = replace(trial, dense_generic_cap=0, w_dense_tiny=0.0)
+        blocked_first = [index.ids[idx] for idx in rank(index, state, blocked, pool, limit=2)]
+        self.assertEqual(blocked_first[0], "HOT")
+
+    def test_idf_rare_token_outranks_hotter_generic_clone(self) -> None:
+        rows = [
+            {
+                "parent_asin": "HOT",
+                "title": "Cotton tee imported",
+                "features": ["cotton", "100% cotton", "Imported"],
+                "description": ["everyday tee"],
+                "categories": ["Clothing", "Men", "T-Shirts"],
+                "details": {"Color": "White", "department": "mens"},
+                "store": "HotBrand",
+                "price": 18.0,
+                "average_rating": 4.9,
+                "rating_number": 200,
+            },
+            {
+                "parent_asin": "TARGET",
+                "title": "Gemma cotton tee",
+                "features": ["cotton", "100% cotton", "Imported", "Gemma"],
+                "description": ["everyday tee"],
+                "categories": ["Clothing", "Men", "T-Shirts"],
+                "details": {"Color": "White", "department": "mens"},
+                "store": "QuietBrand",
+                "price": 18.0,
+                "average_rating": 4.8,
+                "rating_number": 50,
+            },
+        ]
+        path = Path(self.tempdir.name) / "idf_catalog.jsonl"
+        path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        index = ContestIndex(path)
+        state = ContestState(session_id="s")
+        state.category = "Men T-Shirts"
+        state.add_constraints(["cotton", "color: white", "imported", "gemma"], turn=1)
+        pool = list(range(len(index)))
+        ids = conjunction_asins(rows, "Men T-Shirts", ["cotton", "color: white", "imported", "gemma"])
+        self.assertIn("TARGET", ids)
+        baseline = replace(
+            PUBLIC,
+            w_idf=0.0,
+            w_exclusive=0.0,
+            w_dense=0.0,
+            w_lexical=0.0,
+            w_constraint=0.0,
+            w_profile=0.0,
+            dense_skip_generic=False,
+        )
+        idf_cfg = replace(
+            PUBLIC,
+            w_idf=0.25,
+            w_exclusive=0.0,
+            w_dense=0.0,
+            w_lexical=0.0,
+            w_constraint=0.0,
+            w_profile=0.0,
+            dense_skip_generic=False,
+        )
+        popular_first = [index.ids[idx] for idx in rank(index, state, baseline, pool, limit=2)]
+        idf_first = [index.ids[idx] for idx in rank(index, state, idf_cfg, pool, limit=2)]
+        self.assertEqual(popular_first[0], "HOT")
+        self.assertEqual(idf_first[0], "TARGET")
+
+    def test_exclusive_rare_token_outranks_hotter_generic_clone(self) -> None:
+        rows = [
+            {
+                "parent_asin": "HOT",
+                "title": "Cotton tee imported",
+                "features": ["cotton", "100% cotton", "Imported"],
+                "description": ["everyday tee"],
+                "categories": ["Clothing", "Men", "T-Shirts"],
+                "details": {"Color": "White", "department": "mens"},
+                "store": "HotBrand",
+                "price": 18.0,
+                "average_rating": 4.9,
+                "rating_number": 200,
+            },
+            {
+                "parent_asin": "TARGET",
+                "title": "Gemma cotton tee",
+                "features": ["cotton", "100% cotton", "Imported", "Gemma"],
+                "description": ["everyday tee"],
+                "categories": ["Clothing", "Men", "T-Shirts"],
+                "details": {"Color": "White", "department": "mens"},
+                "store": "QuietBrand",
+                "price": 18.0,
+                "average_rating": 4.8,
+                "rating_number": 50,
+            },
+        ]
+        path = Path(self.tempdir.name) / "exclusive_catalog.jsonl"
+        path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        index = ContestIndex(path)
+        state = ContestState(session_id="s")
+        state.category = "Men T-Shirts"
+        state.add_constraints(["cotton", "color: white", "imported", "gemma"], turn=1)
+        pool = list(range(len(index)))
+        ids = conjunction_asins(rows, "Men T-Shirts", ["cotton", "color: white", "imported", "gemma"])
+        self.assertIn("TARGET", ids)
+        quiet = dict(
+            w_idf=0.0,
+            w_dense=0.0,
+            w_lexical=0.0,
+            w_constraint=0.0,
+            w_profile=0.0,
+            dense_skip_generic=False,
+        )
+        popular_first = [
+            index.ids[idx]
+            for idx in rank(index, state, replace(PUBLIC, w_exclusive=0.0, **quiet), pool, limit=2)
+        ]
+        exclusive_first = [
+            index.ids[idx]
+            for idx in rank(index, state, replace(PUBLIC, w_exclusive=0.25, **quiet), pool, limit=2)
+        ]
+        self.assertEqual(popular_first[0], "HOT")
+        self.assertEqual(exclusive_first[0], "TARGET")
+
+    def test_hard_pool_bm25_prefers_title_hit_over_long_hotter_clone(self) -> None:
+        filler = " ".join(f"token{idx}" for idx in range(80))
+        rows = [
+            {
+                "parent_asin": "HOT",
+                "title": "Everyday cotton shirt",
+                "features": ["ribbed crew neck", filler],
+                "description": [filler],
+                "categories": ["Shirts"],
+                "details": {"department": "mens"},
+                "store": "HotBrand",
+                "price": 18.0,
+                "average_rating": 4.9,
+                "rating_number": 80,
+            },
+            {
+                "parent_asin": "TARGET",
+                "title": "Ribbed crew neck cotton shirt",
+                "features": ["ribbed crew neck"],
+                "description": ["tee"],
+                "categories": ["Shirts"],
+                "details": {"department": "mens"},
+                "store": "QuietBrand",
+                "price": 18.0,
+                "average_rating": 4.8,
+                "rating_number": 40,
+            },
+        ]
+        path = Path(self.tempdir.name) / "bm25_catalog.jsonl"
+        path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        index = ContestIndex(path)
+        state = ContestState(session_id="s")
+        state.category = "Shirts"
+        state.add_constraints(["ribbed crew neck"], turn=1)
+        pool = list(range(len(index)))
+        off = replace(
+            PUBLIC,
+            w_dense=0.0,
+            w_bm25=0.0,
+            w_lexical=0.0,
+            w_constraint=0.0,
+            w_profile=0.0,
+            w_phrase=0.0,
+        )
+        on = replace(off, w_bm25=0.25)
+        self.assertEqual(index.ids[rank(index, state, off, pool, limit=1)[0]], "HOT")
+        self.assertEqual(index.ids[rank(index, state, on, pool, limit=1)[0]], "TARGET")
+
+    def test_hard_pool_title_uniqueness_outranks_hotter_generic_clone(self) -> None:
+        rows = [
+            {
+                "parent_asin": "HOT",
+                "title": "Cotton everyday shirt",
+                "features": ["ribbed crew neck"],
+                "description": ["basic tee"],
+                "categories": ["Shirts"],
+                "details": {"department": "mens"},
+                "store": "HotBrand",
+                "price": 18.0,
+                "average_rating": 4.9,
+                "rating_number": 80,
+            },
+            {
+                "parent_asin": "TARGET",
+                "title": "Alpine gemma trail shirt",
+                "features": ["ribbed crew neck"],
+                "description": ["basic tee"],
+                "categories": ["Shirts"],
+                "details": {"department": "mens"},
+                "store": "QuietBrand",
+                "price": 18.0,
+                "average_rating": 4.8,
+                "rating_number": 40,
+            },
+        ]
+        path = Path(self.tempdir.name) / "uniq_catalog.jsonl"
+        path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        index = ContestIndex(path)
+        state = ContestState(session_id="s")
+        state.category = "Shirts"
+        state.add_constraints(["ribbed crew neck"], turn=1)
+        pool = list(range(len(index)))
+        off = replace(
+            PUBLIC,
+            w_dense=0.0,
+            w_uniq=0.0,
+            w_lexical=0.0,
+            w_constraint=0.0,
+            w_profile=0.0,
+            w_bm25=0.0,
+        )
+        on = replace(off, w_uniq=0.35)
+        self.assertEqual(index.ids[rank(index, state, off, pool, limit=1)[0]], "HOT")
+        self.assertEqual(index.ids[rank(index, state, on, pool, limit=1)[0]], "TARGET")
+
+    def test_hard_pool_exact_field_line_outranks_hotter_blob_clone(self) -> None:
+        rows = [
+            {
+                "parent_asin": "HOT",
+                "title": "Everyday cotton shirt",
+                "features": ["soft cotton jersey"],
+                "description": ["The ribbed crew neck is comfortable"],
+                "categories": ["Shirts"],
+                "details": {"department": "mens"},
+                "store": "HotBrand",
+                "price": 18.0,
+                "average_rating": 4.9,
+                "rating_number": 80,
+            },
+            {
+                "parent_asin": "TARGET",
+                "title": "Cotton shirt",
+                "features": ["ribbed crew neck"],
+                "description": ["tee"],
+                "categories": ["Shirts"],
+                "details": {"department": "mens"},
+                "store": "QuietBrand",
+                "price": 18.0,
+                "average_rating": 4.8,
+                "rating_number": 40,
+            },
+        ]
+        path = Path(self.tempdir.name) / "field_catalog.jsonl"
+        path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        index = ContestIndex(path)
+        state = ContestState(session_id="s")
+        state.category = "Shirts"
+        state.add_constraints(["ribbed crew neck"], turn=1)
+        pool = list(range(len(index)))
+        off = replace(
+            PUBLIC,
+            w_dense=0.0,
+            w_field=0.0,
+            w_lexical=0.0,
+            w_constraint=0.0,
+            w_profile=0.0,
+            w_bm25=0.0,
+            w_uniq=0.0,
+        )
+        on = replace(off, w_field=0.35)
+        self.assertEqual(index.ids[rank(index, state, off, pool, limit=1)[0]], "HOT")
+        self.assertEqual(index.ids[rank(index, state, on, pool, limit=1)[0]], "TARGET")
+
+    def test_hard_pool_field_line_strips_trailing_punct(self) -> None:
+        rows = [
+            {
+                "parent_asin": "HOT",
+                "title": "Everyday cotton shirt",
+                "features": ["soft cotton jersey."],
+                "description": ["The ribbed crew neck is comfortable"],
+                "categories": ["Shirts"],
+                "details": {"department": "mens"},
+                "store": "HotBrand",
+                "price": 18.0,
+                "average_rating": 4.9,
+                "rating_number": 80,
+            },
+            {
+                "parent_asin": "TARGET",
+                "title": "Cotton shirt",
+                "features": ["ribbed crew neck."],
+                "description": ["tee"],
+                "categories": ["Shirts"],
+                "details": {"department": "mens"},
+                "store": "QuietBrand",
+                "price": 18.0,
+                "average_rating": 4.8,
+                "rating_number": 40,
+            },
+        ]
+        path = Path(self.tempdir.name) / "field_punct.jsonl"
+        path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        index = ContestIndex(path)
+        state = ContestState(session_id="s")
+        state.category = "Shirts"
+        state.add_constraints(["ribbed crew neck"], turn=1)
+        pool = list(range(len(index)))
+        off = replace(
+            PUBLIC,
+            w_dense=0.0,
+            w_field=0.0,
+            w_lexical=0.0,
+            w_constraint=0.0,
+            w_profile=0.0,
+            w_bm25=0.0,
+            w_uniq=0.0,
+        )
+        on = replace(off, w_field=0.35)
+        self.assertEqual(index.ids[rank(index, state, off, pool, limit=1)[0]], "HOT")
+        self.assertEqual(index.ids[rank(index, state, on, pool, limit=1)[0]], "TARGET")
+
+    def test_field_flat_skips_minilm_keeps_hotter_clone_first(self) -> None:
+        rows = [
+            {
+                "parent_asin": "HOT",
+                "title": "Everyday cotton shirt",
+                "features": ["ribbed crew neck"],
+                "description": ["plain tee"],
+                "categories": ["Shirts"],
+                "details": {"department": "mens"},
+                "store": "HotBrand",
+                "price": 18.0,
+                "average_rating": 4.9,
+                "rating_number": 80,
+            },
+            {
+                "parent_asin": "CLONE",
+                "title": "Cotton shirt",
+                "features": ["ribbed crew neck"],
+                "description": ["everyday unique rubber sole comfort"],
+                "categories": ["Shirts"],
+                "details": {"department": "mens"},
+                "store": "QuietBrand",
+                "price": 18.0,
+                "average_rating": 4.8,
+                "rating_number": 40,
+            },
+        ]
+        path = Path(self.tempdir.name) / "field_flat_dense.jsonl"
+        path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        index = ContestIndex(path)
+        state = ContestState(session_id="s")
+        state.category = "Shirts"
+        state.add_constraints(["ribbed crew neck"], turn=1)
+        pool = list(range(len(index)))
+
+        def encode(texts: list[str]) -> list[list[float]]:
+            vectors = []
+            for text in texts:
+                lowered = text.lower()
+                if "plain tee" in lowered:
+                    vectors.append([0.0, 1.0])
+                else:
+                    vectors.append([1.0, 0.0])
+            return vectors
+
+        set_encoder(PoolDenseEncoder(encode=encode))
+        base = replace(
+            PUBLIC,
+            w_dense=0.8,
+            w_dense_tiny=0.5,
+            dense_tiny_cap=6,
+            w_lexical=0.0,
+            w_constraint=0.0,
+            w_profile=0.0,
+            w_field=0.25,
+            dense_skip_generic=True,
+            dense_skip_field_flat=False,
+        )
+        shuffled = rank(index, state, base, pool, limit=1)
+        locked = rank(index, state, replace(base, dense_skip_field_flat=True), pool, limit=1)
+        self.assertEqual(index.ids[shuffled[0]], "CLONE")
+        self.assertEqual(index.ids[locked[0]], "HOT")
+
+    def test_hard_pool_distinctive_title_phrase_outranks_hotter_blob_clone(self) -> None:
+        rows = [
+            {
+                "parent_asin": "HOT",
+                "title": "Everyday cotton shirt",
+                "features": ["soft cotton jersey"],
+                "description": ["The ribbed crew neck is comfortable"],
+                "categories": ["Shirts"],
+                "details": {"department": "mens"},
+                "store": "HotBrand",
+                "price": 18.0,
+                "average_rating": 4.9,
+                "rating_number": 80,
+            },
+            {
+                "parent_asin": "TARGET",
+                "title": "Ribbed crew neck cotton shirt",
+                "features": ["everyday tee"],
+                "description": ["ribbed crew neck"],
+                "categories": ["Shirts"],
+                "details": {"department": "mens"},
+                "store": "QuietBrand",
+                "price": 18.0,
+                "average_rating": 4.8,
+                "rating_number": 40,
+            },
+        ]
+        path = Path(self.tempdir.name) / "phrase_catalog.jsonl"
+        path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        index = ContestIndex(path)
+        state = ContestState(session_id="s")
+        state.category = "Shirts"
+        state.add_constraints(["ribbed crew neck"], turn=1)
+        pool = list(range(len(index)))
+        off = replace(
+            PUBLIC,
+            w_dense=0.0,
+            w_field=0.0,
+            w_phrase=0.0,
+            w_lexical=0.0,
+            w_constraint=0.0,
+            w_profile=0.0,
+            w_bm25=0.0,
+            w_uniq=0.0,
+            w_title=0.0,
+        )
+        on = replace(off, w_phrase=0.35)
+        self.assertEqual(index.ids[rank(index, state, off, pool, limit=1)[0]], "HOT")
+        self.assertEqual(index.ids[rank(index, state, on, pool, limit=1)[0]], "TARGET")
 
     def test_dense_pop_floor_keeps_eighth_popular_in_top10(self) -> None:
         rows = []
@@ -745,7 +1602,16 @@ class ContestAgentTests(unittest.TestCase):
             w_rerank=0.85,
             rerank_pool_limit=80,
         )
-        popular_first = [index.ids[idx] for idx in rank(index, state, replace(PUBLIC, w_dense=0, w_rerank=0), list(range(len(index))), limit=2)]
+        popular_first = [
+            index.ids[idx]
+            for idx in rank(
+                index,
+                state,
+                replace(PUBLIC, w_dense=0, w_rerank=0, w_phrase=0.0),
+                list(range(len(index))),
+                limit=2,
+            )
+        ]
         rerank_first = [index.ids[idx] for idx in rank(index, state, reranked, list(range(len(index))), limit=2)]
         self.assertEqual(popular_first[0], "HOT")
         self.assertEqual(rerank_first[0], "TARGET")

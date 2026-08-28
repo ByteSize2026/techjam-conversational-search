@@ -15,7 +15,12 @@ python eval_contest.py --only public
 python -m evaluator.local_evaluator
 ```
 
-当前本地分数（0 token）：公开 200 Hit@10 **1.000** / 技术分 **0.9534**；自建 holdout 200 Hit **0.980** / **0.8888**。公开 0.95 **不能**当私有 800 的预测。说明见 `report/README.md`。
+当前本地分数（0 token）：公开 200 Hit@10 **1.000** / 技术分 **0.9549**；自建 holdout 200 Hit **0.980** / **0.8981**。公开 0.95 **不能**当私有 800 的预测。说明、成本与演示见 `report/README.md`、`report/submit.md`。
+
+```bash
+python demo/run_demo.py --session public_0002   # Intent Override 多轮
+python demo/run_demo.py --scenario buying
+```
 
 ---
 
@@ -101,6 +106,8 @@ Efficiency = clip((11 - MTTC) / 10, 0, 1)
 Only exact `parent_asin` equality produces a hit. Core metrics are also reported by scenario.
 
 ## Model Choice and Cost
+
+计分默认 **0 token / $0**，不调用 LLM。可选 MiniLM 只读本机缓存，缺权重则 dense=0。延迟与复现见 `report/submit.md`。
 
 Teams may use any legally accessible LLM API or local model. Teams manage their own credentials and must never commit API keys. Model choice, estimated cost, token usage, and latency must be disclosed. Token usage is a feasibility metric, not part of the core technical score. The organizer does not provide or reimburse model API credits; teams are responsible for any costs incurred through optional external services.
 

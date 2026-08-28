@@ -1,0 +1,4 @@
+# ContestAgent PUBLIC scoring path uses the Python standard library only.
+# Optional MiniLM (local Hugging Face cache; missing weights → dense=0):
+# torch
+# transformers
