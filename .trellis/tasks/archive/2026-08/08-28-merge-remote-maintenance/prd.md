@@ -27,14 +27,14 @@
 
 ## Acceptance Criteria
 
-- [ ] `git merge-base --is-ancestor 9752af5 HEAD` 成功，证明远端三个提交均保留。
-- [ ] `git merge-base --is-ancestor 7693d3a HEAD` 成功，证明本地三个提交均保留。
-- [ ] README 保持当前中文导航和有效链接，不恢复旧的重复英文段落或死链。
-- [ ] Trellis journal/index 包含两次不同编号的 Session 7/8，工作提交哈希仍可解析。
-- [ ] `python3 -m unittest discover -s tests -v`、Markdown 链接检查和 `git diff --check`
+- [x] `git merge-base --is-ancestor 9752af5 HEAD` 成功，证明远端三个提交均保留。
+- [x] `git merge-base --is-ancestor 7693d3a HEAD` 成功，证明本地三个提交均保留。
+- [x] README 保持当前中文导航和有效链接，不恢复旧的重复英文段落或死链。
+- [x] Trellis journal/index 包含两次不同编号的 Session 7/8，工作提交哈希仍可解析。
+- [x] `python3 -m unittest discover -s tests -v`、Markdown 链接检查和 `git diff --check`
       全部通过。
-- [ ] 普通 push 成功，远端 `main` 指向包含双方历史的合并结果。
-- [ ] 两个任务外未跟踪目录仍存在且未进入提交。
+- [x] 普通 push 成功，远端 `main` 指向包含双方历史的合并结果。
+- [x] 两个任务外未跟踪目录仍存在且未进入提交。
 
 ## Out of Scope
 
