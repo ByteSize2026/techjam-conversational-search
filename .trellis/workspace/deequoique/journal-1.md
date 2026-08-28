@@ -131,3 +131,24 @@ Restored the original retrieval/state pipeline as the only starter.agent.Agent, 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 7: 修复仓库维护债务
+
+**Date**: 2026-08-28
+**Task**: 修复仓库维护债务
+**Branch**: `main`
+
+### Summary
+
+删除 README 死链，补全 Agent 模块规范，将确定性意图解析拆分到 intent.py 并保留 state 兼容导出；92 项测试通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2abb908` | (see git log) |
+
+### Status
+
+[OK] **Completed**
