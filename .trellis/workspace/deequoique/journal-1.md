@@ -173,3 +173,24 @@ Restored the original retrieval/state pipeline as the only starter.agent.Agent, 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 9: 合并远端维护更新
+
+**Date**: 2026-08-28
+**Task**: 合并远端维护更新
+**Branch**: `main`
+
+### Summary
+
+将本地文档整理历史与远端维护重构安全合并；保留双方提交，README 使用新版中文结构，Trellis 维护与文档会话分别编号 7/8。92 项测试、导入兼容、CLI、链接与祖先检查通过，并以普通非 force push 更新 origin/main。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `98e1e04` | (see git log) |
+
+### Status
+
+[OK] **Completed**
