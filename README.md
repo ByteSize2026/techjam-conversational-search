@@ -160,10 +160,6 @@ python -m tests.benchmarks.qwen_reranker --help
 ## Judging and Submission Policy
 
 - Participant submission requirements: `docs/submission_rules.md`
-- Participant release checklist: `docs/participant_release_checklist.md`
-- Organizer-only final judging controls: `organizer/JUDGING_RUNBOOK.md`
-- Organizer private release checklist: `organizer/private_release_checklist.md`
-- Judging day operations SOP: `organizer/JUDGING_DAY_SOP.md`
 
 ## Data Source
 

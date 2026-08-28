@@ -18,9 +18,20 @@ respond(self, session_id: str, user_message: str, turn: int, top_k: int) -> dict
 `starter/agent.py` 是提交入口和稳定 facade：它负责依赖组装、会话生命周期、
 整轮编排与最终诊断。可复用的实现职责位于 `starter/shopping_agent/`：
 
-- `retrieval.py` 负责路由召回、类目配额、候选合并、多样化和召回诊断。
+- `catalog.py` / `config.py` 负责 catalog 索引、类目解析和运行配置；不得持有会话状态。
+- `state.py` 负责状态数据模型、session store 和 reducer；`intent.py` 负责确定性消息解析，
+  `state.parse_intent_update` 只是保留旧导入路径的兼容重导出。
+- `policy.py` 负责意图路由、候选 gate、追问和提交决策。
+- `retrieval.py` 负责词法/类目召回、类目配额、候选合并、多样化和召回诊断。
+- `structured_pool.py` 在预算裁剪前应用结构化约束并记录软化结果。
 - `ranking.py` 负责候选统计、词法证据、确定性特征融合与排序置信证据。
-- `response.py` 负责语义排序适配、usage/failure 提取、fallback 和响应合同校验。
+- `model.py`、`semantic_ranking.py` 和 `qwen_reranker.py` 负责模型后端、可选语义重排
+  与离线降级；它们不得成为正确性所必需的网络依赖。
+- `response.py` 负责 usage/failure 提取、fallback 和最终响应合同校验。
+
+依赖方向从稳定入口流向上述组件；状态 reducer 不依赖 retrieval/ranking，解析器只产生
+`IntentUpdate`，下游检索和排序只读取 active projection。`starter.agent.Agent` 始终是唯一
+正式入口，不增加并行的 Contest/Legacy facade。
 
 不要把这些实现重新堆回提交 facade。仓库内测试和 benchmark 会直接调用或替换
 `Agent._retrieve`、`_feature_rank`、`_rank_evidence`、`_valid_ids` 等兼容入口；
