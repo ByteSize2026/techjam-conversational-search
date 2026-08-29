@@ -1,0 +1,6 @@
+{"file": ".trellis/workspace/RayneYael/agent-v2-first-principles-design.md", "reason": "Original first-principles draft the Router/Value-Node split is based on; ground implementation decisions in it when design.md is underspecified"}
+{"file": "docs/problem_statement.md", "reason": "Competition brief; node table and adaptive-parameter design must keep satisfying the four pillars (dual-track routing, dynamic state machine, self-evolution, Hit Rate/MRR/MTTC) named here"}
+{"file": ".trellis/spec/agent/index.md", "reason": "Coding conventions for the starter/shopping_agent package being rewritten"}
+{"file": ".trellis/spec/data-contracts/index.md", "reason": "Existing SessionState/StateReducer contract conventions that must stay intact through the state-model additions in Phase 2"}
+{"file": ".trellis/spec/evaluator/index.md", "reason": "Evaluator contract that must never change; response schema and reset/respond behavior constraints"}
+{"file": ".trellis/spec/testing/index.md", "reason": "Project test conventions for the new test files added in each phase"}

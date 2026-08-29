@@ -1,0 +1,7 @@
+{"file":".trellis/spec/guides/change-impact.md","reason":"Checks cross-layer Agent/evaluator/JSONL/testing effects without modifying the official evaluator."}
+{"file":".trellis/spec/guides/offline-reproducibility.md","reason":"Verifies credentials, network fallback, frozen hashes and reproducible commands."}
+{"file":".trellis/spec/agent/tool-loop.md","reason":"Audits bounded action provenance, pause/resume, fallback and sensitive trace exclusions."}
+{"file":".trellis/spec/evaluator/protocol-and-scoring.md","reason":"Checks official result preservation and overall/scenario metric correctness."}
+{"file":".trellis/spec/data-contracts/jsonl-privacy-submission.md","reason":"Checks no API keys, participant output, catalog mutation or ground-truth leakage enters the commit."}
+{"file":".trellis/spec/testing/unittest-fixtures.md","reason":"Checks deterministic standard-library tests and temporary output cleanup."}
+{"file":".trellis/tasks/08-27-trace-runner-baseline/research/baseline.md","reason":"Checks commit/input/reference provenance and expected diagnostic gaps against final implementation."}

@@ -105,7 +105,11 @@ class AgentConfig:
     model_timeout_seconds: float = 8.0
     candidate_limit: int = 30
     retrieval_limit: int = 100
-    model_max_tokens: int = 512
+    # SemanticRank echoes back up to candidate_limit=30 parent_asins plus a
+    # score per id; that alone needs ~500-700 tokens, so 512 truncates it
+    # even with thinking disabled (fix2_nothinking_semrank_20260830_005408:
+    # 7/7 SemanticRank calls failed with truncated JSON at 512).
+    model_max_tokens: int = 1024
     temperature: float = 0.0
 
     # ECom-style tool planning is opt-in.  Without an injected planner or
@@ -183,7 +187,7 @@ class AgentConfig:
                 env.get("SHOPPING_AGENT_RETRIEVAL_LIMIT"), 100
             ),
             model_max_tokens=_positive_int(
-                env.get("SHOPPING_AGENT_MODEL_MAX_TOKENS"), 512
+                env.get("SHOPPING_AGENT_MODEL_MAX_TOKENS"), 1024
             ),
             temperature=_positive_float(
                 env.get("SHOPPING_AGENT_MODEL_TEMPERATURE"), 0.0

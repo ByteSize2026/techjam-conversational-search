@@ -131,20 +131,35 @@ class AgentContractTests(unittest.TestCase):
         self.assertEqual(state.recommendations_by_epoch.get(1), state.last_candidate_ids)
 
     def test_no_preference_attribute_is_not_asked_again(self) -> None:
+        # Router/Value-Node architecture note (08-28-agent-v2-router-value-node,
+        # design.md Section 6): unlike the former fixed pipeline (which called
+        # ``ClarificationPolicy.choose_attribute`` unconditionally after every
+        # rank), ``SlotCheckRouter`` only has *evidence* to reason about once a
+        # prior turn's ``Search`` has actually populated ``session.candidates``
+        # -- it deliberately does not ask a blind, query-free question on a
+        # session's very first turn.  ``CandidatePoolRouter``'s post-Search
+        # branch is a separate, narrower trigger (a coarse "pool is over-general"
+        # cutoff), not a catch-all -- so a small, focused catalog's first turn
+        # (as here) legitimately asks nothing yet.  This test's first message
+        # therefore only seeds evidence; the second (generic follow-up) message
+        # is what actually exercises ``SlotCheckRouter``'s evidence-based
+        # question, matching the "convergence by turn 2-3" story design.md
+        # Section 9's scenario showcase describes.
         agent = Agent(self.catalog_path)
         agent.reset("boundary", self.profile)
-        first = agent.respond("boundary", "I'm looking for clothing, but I'm still exploring.", 1, 10)
-        first_attribute = first["ask_attribute"]
+        agent.respond("boundary", "I'm looking for clothing, but I'm still exploring.", 1, 10)
+        second = agent.respond("boundary", "Show me more options.", 2, 10)
+        first_attribute = second["ask_attribute"]
         self.assertIsNotNone(first_attribute)
-        second = agent.respond(
+        third = agent.respond(
             "boundary",
             f"I don't have a preference for {first_attribute}; please use your judgment.",
-            2,
+            3,
             10,
         )
         state = agent.store.require("boundary")
         self.assertIn(first_attribute, state.no_preference)
-        self.assertNotEqual(second["ask_attribute"], first_attribute)
+        self.assertNotEqual(third["ask_attribute"], first_attribute)
 
     def test_additional_no_preference_sentence_is_not_positive_evidence(self) -> None:
         update = parse_intent_update("I don't have an additional preference for material.")
@@ -214,6 +229,66 @@ class AgentContractTests(unittest.TestCase):
         self.assertLessEqual(len(ids), 10)
         self.assertEqual(len(ids), len(set(ids)))
         self.assertTrue(set(ids) <= {"A", "B", "C"})
+
+    def test_ask_attribute_pause_resume_and_intent_override_in_one_session(self) -> None:
+        """implement.md Phase 7: one end-to-end contract test proving both
+        cycles work together within a single multi-turn session, on top of
+        the graph facade (``_respond_impl_graph``) rather than testing each
+        cycle in isolation.  ``test_no_preference_attribute_is_not_asked_again``
+        already covers the ask/resume cycle alone and
+        ``test_override_starts_epoch_and_preserves_category_anchor`` already
+        covers the override cycle alone; this test is additive, not a
+        replacement for either.
+        """
+
+        agent = Agent(self.catalog_path)
+        agent.reset("combo", self.profile)
+
+        # Turn 1: seed evidence (category + one hard constraint) -- no
+        # clarification question yet (SlotCheckRouter has no prior-turn
+        # evidence on a session's first turn; see design.md Section 6).
+        first = agent.respond("combo", "I'm looking for shoes. A key requirement is: cotton.", 1, 10)
+        self.assertIsNone(first["ask_attribute"])
+        state = agent.store.require("combo")
+        self.assertEqual(state.category_anchor, "shoes")
+
+        # Turn 2: a generic follow-up lets SlotCheckRouter ask a real,
+        # evidence-based question -- the "pause" half of the ask/resume
+        # cycle.  Recommendations are still populated alongside the
+        # question (the graph's Rank-always-runs guarantee).
+        second = agent.respond("combo", "Show me more options.", 2, 10)
+        asked_attribute = second["ask_attribute"]
+        self.assertIsNotNone(asked_attribute)
+        self.assertTrue(second["recommendations"])
+        self.assertIsNotNone(state.pending_question)
+        self.assertEqual(state.pending_question.attribute, asked_attribute)
+
+        # Turn 3: answering that exact question is the "resume" half --
+        # pending_question clears (bound to a fresh one, if any) and the
+        # attribute is recorded as no-preference so it is never re-asked.
+        agent.respond(
+            "combo",
+            f"I don't have a preference for {asked_attribute}; please use your judgment.",
+            3,
+            10,
+        )
+        self.assertIn(asked_attribute, state.no_preference)
+
+        # Turn 4: an explicit override wipes the earlier "cotton" constraint
+        # and bumps intent_epoch, while the category anchor established on
+        # turn 1 survives the override (design.md's override semantics,
+        # unchanged from v1 -- StateReducer.apply is reused as-is).
+        old_epoch = state.intent_epoch
+        agent.respond(
+            "combo",
+            "Actually, ignore my earlier preference. What I need is: leather.",
+            4,
+            10,
+        )
+        self.assertEqual(state.intent_epoch, old_epoch + 1)
+        self.assertEqual(state.category_anchor, "shoes")
+        self.assertFalse(any(item.value.lower() == "cotton" for item in state.active_constraints))
+        self.assertTrue(any(item.value.lower() == "leather" for item in state.active_constraints))
 
 
 if __name__ == "__main__":

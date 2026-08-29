@@ -1,7 +1,7 @@
 {
-  "id": "ecom-agent-architecture",
-  "name": "ecom-agent-architecture",
-  "title": "ECom-style agent architecture upgrade",
+  "id": "agent-v2-router-value-node",
+  "name": "agent-v2-router-value-node",
+  "title": "Router/Value-Node shopping agent architecture",
   "description": "",
   "status": "in_progress",
   "dev_type": null,
@@ -10,7 +10,7 @@
   "priority": "P2",
   "creator": "RayneYael",
   "assignee": "RayneYael",
-  "createdAt": "2026-08-27",
+  "createdAt": "2026-08-28",
   "completedAt": null,
   "branch": null,
   "base_branch": "main",
@@ -22,7 +22,5 @@
   "parent": null,
   "relatedFiles": [],
   "notes": "",
-  "meta": {
-    "superseded_by": "08-28-agent-v2-router-value-node"
-  }
+  "meta": {}
 }

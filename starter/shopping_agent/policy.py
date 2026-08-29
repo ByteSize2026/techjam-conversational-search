@@ -331,6 +331,12 @@ class ClarificationPolicy:
             # Repeating is only useful when no untouched attribute has any
             # candidate evidence; protocol-aware remains bounded to once.
             return float("-inf")
+        if attribute in {item.attribute for item in state.active_constraints}:
+            # Already known from a source other than this policy asking for
+            # it (an override, an unprompted statement) -- re-asking reads as
+            # not having listened. asked_set only tracks what *this policy*
+            # asked, so it misses that case on its own.
+            return float("-inf")
         entropy = 0.0
         if stats is not None:
             entropy = float(stats.attribute_entropy.get(attribute, 0.0))
@@ -356,25 +362,42 @@ class ClarificationPolicy:
             remaining_turns = max(10 - int(turn), 0)
         if remaining_turns <= 0 or self.max_questions <= 0:
             return None
+        known_attributes = {item.attribute for item in state.active_constraints}
         available = [
             attribute
             for attribute in self.ATTRIBUTE_ORDER
             if attribute in ALLOWED_ATTRIBUTES
             and attribute not in state.no_preference
             and attribute not in state.asked_set
+            # A hard/soft value can arrive without this policy ever having
+            # asked for it (override, unprompted statement) -- asked_set
+            # alone misses that, so re-ask the exact thing the customer
+            # just told us (showcase b, artifacts/full_live_test/
+            # final_check_20_20260830_010957, public_0002/public_0013).
+            and attribute not in known_attributes
         ]
         if not available:
             return None
         if self.mode == "protocol_aware":
-            # Prefer attributes with actual candidate evidence, but retain a
-            # stable order when the fixture/catalog contains no metadata.
+            # Prefer attributes with actual candidate evidence.  No evidence
+            # at all means there is nothing yet to justify a question about
+            # any specific attribute -- return None (the caller falls
+            # through to Search/Rank) rather than guessing the first
+            # not-yet-excluded attribute in a fixed order.  08-28's
+            # Router/Value-Node graph (design.md Section 6) relies on this:
+            # both ``SlotCheckRouter`` and ``CandidatePoolRouter`` call this
+            # method to decide whether to *ask at all*, not only what to ask
+            # once asking is already decided -- unlike this method's v1 call
+            # site, which only ever ran after a full Search/Rank pass had
+            # already produced real per-turn evidence, so an evidence-free
+            # call was never actually possible there.
             with_evidence = [
                 attribute
                 for attribute in available
                 if self._candidate_values(candidates, attribute)
                 or (stats is not None and stats.attribute_entropy.get(attribute, 0.0) > 0)
             ]
-            return (with_evidence or available)[0]
+            return with_evidence[0] if with_evidence else None
         return max(available, key=lambda attribute: self._utility(attribute, state, candidates, stats))
 
     def choose(

@@ -1,15 +1,15 @@
 {
-  "id": "ecom-agent-architecture",
-  "name": "ecom-agent-architecture",
-  "title": "ECom-style agent architecture upgrade",
+  "id": "robust-evaluator-feasibility",
+  "name": "robust-evaluator-feasibility",
+  "title": "Robust evaluator feasibility analysis",
   "description": "",
-  "status": "in_progress",
+  "status": "planning",
   "dev_type": null,
   "scope": null,
   "package": null,
   "priority": "P2",
-  "creator": "RayneYael",
-  "assignee": "RayneYael",
+  "creator": "--help",
+  "assignee": "--help",
   "createdAt": "2026-08-27",
   "completedAt": null,
   "branch": null,
@@ -22,7 +22,5 @@
   "parent": null,
   "relatedFiles": [],
   "notes": "",
-  "meta": {
-    "superseded_by": "08-28-agent-v2-router-value-node"
-  }
+  "meta": {}
 }

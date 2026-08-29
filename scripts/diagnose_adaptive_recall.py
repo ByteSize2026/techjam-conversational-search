@@ -89,7 +89,21 @@ class FeatureOnlyPassthroughRanker:
 
 
 class TargetFreeTraceAgent(Agent):
-    """Instrument Agent internals without supplying target information."""
+    """Instrument Agent internals without supplying target information.
+
+    ``08-28-agent-v2-router-value-node`` Phase 7 moved ``respond()`` onto the
+    Router/Value-Node graph (``starter/shopping_agent/graph.py``), whose
+    ``Search``/``Rank`` nodes call ``self.recommendation_engine._retrieve``/
+    ``_feature_rank`` directly rather than the ``Agent._retrieve``/
+    ``_feature_rank`` methods this class used to override.  Those two
+    methods still exist on ``Agent`` (kept for the legacy fixed pipeline and
+    for ``tests/test_adaptive_category_recall.py``'s direct calls) but are no
+    longer on the call path ``respond()`` actually uses, so overriding them
+    here no longer observes anything.  Wrapping the same two methods on
+    ``self.recommendation_engine`` instead -- the one object both the legacy
+    pipeline and the graph's ``Search``/``Rank`` nodes call through -- keeps
+    this trace accurate regardless of which pipeline is active.
+    """
 
     def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)
@@ -97,6 +111,50 @@ class TargetFreeTraceAgent(Agent):
         self.diagnostics: list[dict[str, object]] = []
         self._current_trace: dict[str, object] | None = None
         self._pending_retrieval_ids: list[str] = []
+        self._wrap_recommendation_engine()
+
+    def _wrap_recommendation_engine(self) -> None:
+        engine = self.recommendation_engine
+        original_retrieve = engine._retrieve
+        original_feature_rank = engine._feature_rank
+
+        def traced_retrieve(state: object, latest: str, budget: int, **kwargs: object) -> list[object]:
+            result = original_retrieve(state, latest, budget, **kwargs)
+            self._pending_retrieval_ids = [
+                str(getattr(item, "parent_asin", "")).strip()
+                for item in result
+                if str(getattr(item, "parent_asin", "")).strip()
+            ]
+            return result
+
+        def traced_feature_rank(
+            state: object, candidates: Sequence[object], context: object, **kwargs: object
+        ) -> list[object]:
+            result = original_feature_rank(state, candidates, context, **kwargs)
+            turn_value = getattr(context, "turn", len(self._turns()) + 1)
+            try:
+                turn = int(turn_value)
+            except (TypeError, ValueError):
+                turn = len(self._turns()) + 1
+            self._turns().append(
+                {
+                    "turn": turn,
+                    "retrieval_candidate_ids": list(self._pending_retrieval_ids),
+                    "feature_ranked_ids": [
+                        str(getattr(item, "parent_asin", "")).strip()
+                        for item in result
+                        if str(getattr(item, "parent_asin", "")).strip()
+                    ],
+                }
+            )
+            self._pending_retrieval_ids = []
+            return result
+
+        # Bound to this instance only (``engine`` is this Agent's own
+        # ``self.recommendation_engine``, not shared with other Agents), so
+        # this never leaks instrumentation onto an unrelated engine/session.
+        engine._retrieve = traced_retrieve  # type: ignore[method-assign]
+        engine._feature_rank = traced_feature_rank  # type: ignore[method-assign]
 
     @property
     def agent(self) -> "TargetFreeTraceAgent":
@@ -131,42 +189,6 @@ class TargetFreeTraceAgent(Agent):
             turns[-1]["latency_ms"] = round((time.perf_counter() - started) * 1000.0, 6)
             diagnostics = self.last_diagnostics
             self.diagnostics.append(dict(diagnostics))
-
-    def _retrieve(self, state: object, latest: str, budget: int, **kwargs: object) -> list[object]:
-        result = super()._retrieve(state, latest, budget, **kwargs)  # type: ignore[arg-type]
-        self._pending_retrieval_ids = [
-            str(getattr(item, "parent_asin", "")).strip()
-            for item in result
-            if str(getattr(item, "parent_asin", "")).strip()
-        ]
-        return result
-
-    def _feature_rank(
-        self,
-        state: object,
-        candidates: Sequence[object],
-        context: object,
-        **kwargs: object,
-    ) -> list[object]:
-        result = super()._feature_rank(state, candidates, context, **kwargs)  # type: ignore[arg-type]
-        turn_value = getattr(context, "turn", len(self._turns()) + 1)
-        try:
-            turn = int(turn_value)
-        except (TypeError, ValueError):
-            turn = len(self._turns()) + 1
-        self._turns().append(
-            {
-                "turn": turn,
-                "retrieval_candidate_ids": list(self._pending_retrieval_ids),
-                "feature_ranked_ids": [
-                    str(getattr(item, "parent_asin", "")).strip()
-                    for item in result
-                    if str(getattr(item, "parent_asin", "")).strip()
-                ],
-            }
-        )
-        self._pending_retrieval_ids = []
-        return result
 
     def _turns(self) -> list[dict[str, object]]:
         if self._current_trace is None:

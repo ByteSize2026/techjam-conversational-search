@@ -1,0 +1,6 @@
+{"file":".trellis/spec/agent/tool-loop.md","reason":"Defines planner/tool/trajectory/fallback boundaries and forbids raw rationale/profile leakage."}
+{"file":".trellis/spec/agent/contract-and-state.md","reason":"Preserves reset/respond, session isolation, Top-10, usage and intent-override contracts."}
+{"file":".trellis/spec/evaluator/protocol-and-scoring.md","reason":"Requires direct reuse of the official evaluation loop, filtering and metric semantics."}
+{"file":".trellis/spec/data-contracts/jsonl-privacy-submission.md","reason":"Constrains JSONL outputs, secrets, catalog immutability and untracked benchmark artifacts."}
+{"file":".trellis/spec/testing/unittest-fixtures.md","reason":"Provides standard-library TemporaryDirectory and deterministic evaluator fixture patterns."}
+{"file":".trellis/tasks/08-27-trace-runner-baseline/research/baseline.md","reason":"Pins the frozen input hashes, historical main reference and current observability gaps."}

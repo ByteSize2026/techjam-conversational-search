@@ -345,6 +345,7 @@ class OpenAICompatibleBackend:
         timeout_seconds: float = 8.0,
         timeout: float | None = None,
         name: str = "openai-compatible",
+        extra_request_fields: Mapping[str, object] | None = None,
     ) -> None:
         base_url = str(base_url).strip()
         model = str(model).strip()
@@ -359,6 +360,7 @@ class OpenAICompatibleBackend:
             timeout_seconds = timeout
         self.timeout_seconds = max(float(timeout_seconds), 0.001)
         self.name = name
+        self.extra_request_fields = dict(extra_request_fields) if extra_request_fields else {}
 
     @property
     def endpoint(self) -> str:
@@ -378,6 +380,7 @@ class OpenAICompatibleBackend:
             "messages": [dict(message) for message in messages],
             "temperature": temperature,
             "max_tokens": max_tokens,
+            **self.extra_request_fields,
         }
         request = urllib_request.Request(
             self.endpoint,
@@ -447,6 +450,11 @@ class DeepSeekAPIBackend(OpenAICompatibleBackend):
             timeout_seconds=timeout_seconds,
             timeout=timeout,
             name="deepseek-api",
+            # Thinking is on by default (reasoning_effort=high) and burns
+            # 6-13x the visible-output token count on every call (measured
+            # across artifacts/full_live_test/*); it also silently ignores
+            # temperature, breaking our temperature=0 determinism assumption.
+            extra_request_fields={"thinking": {"type": "disabled"}},
         )
 
 

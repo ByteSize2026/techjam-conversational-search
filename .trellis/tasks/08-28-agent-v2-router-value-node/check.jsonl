@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/testing/index.md", "reason": "Verify new tests (static graph test, per-node contract tests, retry-bound tests) follow project test conventions"}
+{"file": ".trellis/spec/evaluator/index.md", "reason": "Verify the public evaluator contract and response schema were not altered by the rewrite"}
+{"file": ".trellis/spec/data-contracts/index.md", "reason": "Verify StateReducer remains the single write path and no new field bypasses it"}
+{"file": ".trellis/workspace/RayneYael/agent-v2-first-principles-design.md", "reason": "Verify no Value Node output is used as a control-flow signal anywhere in the implementation, per the core Router/Value-Node principle"}

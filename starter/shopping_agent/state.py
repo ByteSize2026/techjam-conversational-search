@@ -14,9 +14,7 @@ import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Literal
-
-from .actions import PendingTask, TrajectoryEntry
+from typing import Literal, TypedDict
 
 Attribute = Literal[
     "category",
@@ -269,6 +267,106 @@ class RuntimeContext:
     candidate_stats: CandidateStats | None = None
 
 
+@dataclass(frozen=True)
+class CandidateRef:
+    """One ``Search`` output row: id + compact summary + score.
+
+    Deliberately narrow (design.md §3/§4) -- full product facts live in the
+    catalog and, once requested, in ``details_cache``; this is only what a
+    Router needs to reason about the candidate pool.
+    """
+
+    parent_asin: str
+    summary: str = ""
+    score: float = 0.0
+
+
+@dataclass(frozen=True)
+class RankedRef:
+    """One ``Rank``/``SemanticRank`` output row: id + score + rank source."""
+
+    parent_asin: str
+    score: float = 0.0
+    rank_source: str = ""
+
+
+@dataclass(frozen=True)
+class ProductDetail:
+    """Bounded, structured product detail written only by ``FetchDetails``."""
+
+    parent_asin: str
+    title: str = ""
+    categories: tuple[str, ...] = ()
+    features: tuple[str, ...] = ()
+    description: tuple[str, ...] = ()
+    details: dict[str, str] = field(default_factory=dict)
+    store: str | None = None
+    price: float | None = None
+    rating: float | None = None
+    rating_count: int | None = None
+
+
+@dataclass(frozen=True)
+class PendingQuestion:
+    """The clarification question awaiting the user's next message.
+
+    Written by ``AskAttribute``; cleared once the following turn's
+    ``ExtractConstraints`` runs (design.md §3).
+    """
+
+    attribute: str
+    mode: Literal["fill_missing", "relax_conflict"] = "fill_missing"
+    question_text: str = ""
+    asked_turn: int = 0
+
+
+class NodeTraceEntry(TypedDict):
+    """One row of the bounded per-turn node trace (design.md §8)."""
+
+    step: int
+    node: str
+    kind: Literal["router", "value_node_deterministic", "value_node_llm"]
+    input_summary: str
+    output_summary: str
+    elapsed_ms: float
+
+
+# Sentinel distinguishing "this update does not touch ``pending_question``"
+# from "this update explicitly clears it to ``None``".
+_UNSET = object()
+
+# Bounds referenced by ``StateReducer`` when applying a ``NodeStateUpdate``.
+DETAILS_CACHE_LIMIT = 40
+NODE_TRACE_LIMIT = 64
+
+
+@dataclass(frozen=True)
+class NodeStateUpdate:
+    """A narrow, single-purpose state write produced by one graph node.
+
+    Unlike ``IntentUpdate`` (the constraint diff ``ExtractConstraints``
+    produces), this carries the handful of node-local outputs the
+    Router/Value-Node graph writes: ``Search``'s candidate pool,
+    ``Rank``/``SemanticRank``'s ordering, ``FetchDetails``'s cache entries,
+    ``AskAttribute``'s pending question, per-node trace entries, and the
+    bounded empty-search retry counter (design.md §3, §4, §4.1, §8).
+
+    Every field defaults to "not touched" so a producer only has to name the
+    field it actually writes.  ``StateReducer.apply`` remains the only code
+    path allowed to write these fields onto ``SessionState``.
+    """
+
+    candidates: tuple[CandidateRef, ...] | None = None
+    ranked: tuple[RankedRef, ...] | None = None
+    details: tuple[ProductDetail, ...] = ()
+    pending_question: object = _UNSET  # PendingQuestion | None, else _UNSET
+    session_profile: Mapping[str, object] | None = None
+    append_node_trace: NodeTraceEntry | None = None
+    reset_node_trace: bool = False
+    reset_search_retry: bool = False
+    increment_search_retry: bool = False
+
+
 @dataclass
 class SessionState:
     session_id: str
@@ -288,11 +386,12 @@ class SessionState:
     query_terms: list[str] = field(default_factory=list)
     superseded_constraints: list[Constraint] = field(default_factory=list)
     last_diagnostics: dict[str, object] = field(default_factory=dict)
-    profile_loaded: bool = False
-    pending_task: PendingTask | None = None
-    tool_candidate_ids: list[str] = field(default_factory=list)
-    tool_trajectory: list[TrajectoryEntry] = field(default_factory=list)
-    last_tool_error: str | None = None
+    candidates: list[CandidateRef] = field(default_factory=list)
+    ranked: list[RankedRef] = field(default_factory=list)
+    details_cache: dict[str, ProductDetail] = field(default_factory=dict)
+    pending_question: PendingQuestion | None = None
+    node_trace: list[NodeTraceEntry] = field(default_factory=list)
+    search_retry_count: int = 0
 
     @property
     def active_constraints(self) -> list[Constraint]:
@@ -336,14 +435,6 @@ class SessionState:
         # history to cover all ten evaluator turns while keeping state small.
         if len(current) > 200:
             del current[:-200]
-
-    def record_tool_entry(self, entry: TrajectoryEntry) -> None:
-        self.tool_trajectory.append(entry)
-        # The orchestrator hard-caps itself at twelve actions per official turn.
-        # Retain those actions plus one pause/resume/fallback control entry per
-        # turn while keeping the session footprint finite.
-        if len(self.tool_trajectory) > 140:
-            del self.tool_trajectory[:-140]
 
     def fingerprint(self) -> str:
         payload = {
@@ -447,10 +538,12 @@ class StateReducer:
     def apply(
         self,
         state: SessionState,
-        update: IntentUpdate,
+        update: IntentUpdate | NodeStateUpdate,
         *,
         turn: int = 0,
     ) -> SessionState:
+        if isinstance(update, NodeStateUpdate):
+            return self._apply_node_update(state, update)
         if update.global_override:
             state.intent_epoch += 1
             state.superseded_constraints.extend(state.active_constraints)
@@ -465,9 +558,6 @@ class StateReducer:
             state.asked_attributes.clear()
             state.recommendations_by_epoch.setdefault(state.intent_epoch, [])
             state.last_candidate_ids.clear()
-            state.pending_task = None
-            state.tool_candidate_ids.clear()
-            state.last_tool_error = None
 
         if state.category_anchor is None and update.category_anchor:
             state.category_anchor = _clean(update.category_anchor, 120)
@@ -529,6 +619,46 @@ class StateReducer:
         if len(state.query_terms) > 40:
             del state.query_terms[:-40]
         state.last_state_fingerprint = state.fingerprint()
+        return state
+
+    def _apply_node_update(self, state: SessionState, update: NodeStateUpdate) -> SessionState:
+        """Write the Router/Value-Node graph's narrow, node-local outputs.
+
+        ``candidates``/``ranked`` are full replacements (each new ``Search``
+        clears the prior pool; each new ``Rank``/``SemanticRank`` replaces
+        the prior ordering, per design.md §3).  ``details`` entries merge
+        into the bounded ``details_cache``.  ``pending_question`` is
+        tri-state via the ``_UNSET`` sentinel so a producer that does not
+        touch it never accidentally clears it.
+        """
+
+        if update.candidates is not None:
+            state.candidates = list(update.candidates)
+        if update.ranked is not None:
+            state.ranked = list(update.ranked)
+        for detail in update.details:
+            state.details_cache[detail.parent_asin] = detail
+        if len(state.details_cache) > DETAILS_CACHE_LIMIT:
+            overflow = len(state.details_cache) - DETAILS_CACHE_LIMIT
+            for stale_key in list(state.details_cache.keys())[:overflow]:
+                del state.details_cache[stale_key]
+        if update.pending_question is not _UNSET:
+            state.pending_question = update.pending_question  # type: ignore[assignment]
+        if update.session_profile is not None:
+            # Full replacement, not a merge -- ``DistillProfile`` (design.md
+            # Section 5.6) reads the previous value itself and only calls
+            # with an update when it actually has something new to write.
+            state.session_profile = dict(update.session_profile)
+        if update.reset_node_trace:
+            state.node_trace.clear()
+        if update.append_node_trace is not None:
+            state.node_trace.append(update.append_node_trace)
+        if len(state.node_trace) > NODE_TRACE_LIMIT:
+            del state.node_trace[:-NODE_TRACE_LIMIT]
+        if update.reset_search_retry:
+            state.search_retry_count = 0
+        if update.increment_search_retry:
+            state.search_retry_count = min(state.search_retry_count + 1, 1)
         return state
 
     # ``reduce`` is a readable alias used by callers that treat the reducer as
@@ -710,10 +840,18 @@ def bind_clarification_answer(
 __all__ = [
     "ALLOWED_ATTRIBUTES",
     "Attribute",
+    "CandidateRef",
     "CandidateStats",
     "Constraint",
     "ConstraintMutation",
+    "DETAILS_CACHE_LIMIT",
     "IntentUpdate",
+    "NODE_TRACE_LIMIT",
+    "NodeStateUpdate",
+    "NodeTraceEntry",
+    "PendingQuestion",
+    "ProductDetail",
+    "RankedRef",
     "RuntimeContext",
     "SessionState",
     "SessionStore",
