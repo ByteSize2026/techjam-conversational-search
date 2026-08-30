@@ -60,6 +60,20 @@ respond(self, session_id: str, user_message: str, turn: int, top_k: int) -> dict
 
 全局信息耗尽通常停止继续提问，但存在一个事件级例外：用户同时明确否定当前推荐并要求继续询问具体属性时，只允许当前轮临时绕过提问禁令。不得清除持久的 `global_exhausted`，提交策略仍应按耗尽状态返回可用推荐；临时问题必须排除 `other`、已耗尽/已问属性和当前意图已有约束的属性。下一轮若没有新的明确请求，应恢复全局耗尽行为。
 
+### 模型意图的 catalog 准入
+
+模型输出通过 schema 校验只证明字段名合法，不证明字段值属于真实商品域。模型产生的
+`category`、`brand`、`color`、`material`、`size`、`style` 和 `feature` 在进入 reducer 前，
+必须命中本地 catalog 的同字段值索引；标题 token 使用独立索引，只能参与词法召回，不能
+自动冒充 feature。catalog 外的显式用户措辞可以保留为 soft lexical evidence，但不得成为
+结构化 hard filter。`budget`、数值 rating 和 `use_case` 沿用各自的范围/词法语义，不要求
+精确枚举。
+
+canonicalizer 使用闭合字段和逐行模板。未知 label、catalog ID 或任一 catalog 外结构化值
+都使该 completion 原子失败，整轮使用调用模型前冻结的 deterministic update；不得把合法的
+半份 mutation 混入状态。所有索引由冻结 catalog 在本地构建，不得把网络或第三方依赖变成
+离线正确性的前提。
+
 ## Scenario: provenance-aware Intent Override
 
 ### 1. Scope / Trigger
@@ -134,3 +148,78 @@ duplicate.disclosure_kind = "override"
 - 不把外部 API 密钥写入源码、catalog 或提交包；边界见 [数据与提交规则](../data-contracts/jsonl-privacy-submission.md)。
 
 相关评估细节见 [评估协议与评分](../evaluator/protocol-and-scoring.md)，回归方式见 [unittest fixture](../testing/unittest-fixtures.md)。
+
+## Scenario: 显式双 Evaluator 协议 Profile
+
+### 1. Scope / Trigger
+
+同一个 `starter.agent.Agent` 需要服务官方 evaluator 与自然语言 benchmark 时，调用方必须
+显式选择协议 profile。profile 只选择协议边界配置：输入解释器、profile projection、默认
+澄清策略和结构化字段准入；不得检测输入内容来猜测 evaluator，也不得分叉状态 reducer、
+候选池实现、召回、排序、推荐提交或响应合同。
+
+### 2. Signatures
+
+```python
+Agent(catalog_path="data/catalog.jsonl", *, protocol_profile: str | None = None, ...)
+AgentConfig(protocol_profile: str = "official", ...)
+normalize_protocol_profile(value, *, strict=True) -> str
+```
+
+```text
+python3 -m evaluator.local_evaluator --protocol-profile official ...
+python3 -m nl_benchmark evaluate --protocol-profile natural_language ...
+```
+
+### 3. Contracts
+
+- 闭合值仅为 `official`、`natural_language`，大小写和首尾空白会规范化。
+- 优先级为构造参数、`AgentConfig.protocol_profile`、
+  `SHOPPING_AGENT_PROTOCOL_PROFILE`、默认 `official`。
+- `official` 使用冻结的 `parse_official_intent_update`、稳定顺序
+  `ClarificationPolicy(mode="protocol_aware")`、官方结构化过滤字段，且 reset 不注入自然语言
+  profile grounding。这组输入/策略配置必须维持公开集基线；不能直接复用持续演进的自然语言
+  parser。
+- `natural_language` 使用 `IntentInterpreter` 和
+  `ClarificationPolicy(mode="catalog_entropy")`。
+- `natural_language` 启用 catalog-grounded profile projection 与扩展结构化过滤字段。
+- 显式 `intent_interpreter=` / `clarification_policy=` 覆盖 profile 默认组件。
+- 两种 profile 共享 reducer、structured pool 实现、retrieval、ranking、semantic reranking、
+  commit 和 response guard；structured pool 只接收 profile 对应的字段准入集合，profile 不启用
+  模型或网络。
+- 初始化、reset 和逐轮 diagnostics 必须记录规范化后的 `protocol_profile`。
+
+### 4. Validation & Error Matrix
+
+| 来源/条件 | 结果 |
+| --- | --- |
+| `Agent()` 或空环境 | `official` |
+| 构造参数或 `AgentConfig` 非法值 | `ValueError` |
+| 环境变量非法值 | 安全回退 `official` |
+| 外部旧 Agent + `official` | benchmark 可按旧构造签名加载 |
+| 外部旧 Agent + `natural_language` | worker 明确失败，不得静默降级 |
+
+### 5. Good/Base/Bad Cases
+
+- Good：两个现有 CLI 使用同名参数，分别明确传入各自 profile。
+- Base：官方 evaluator 继续零参数构造 `Agent()`，行为等价于 `official`。
+- Bad：通过首轮句式、数据集字段或 API key 自动推断 evaluator/profile。
+
+### 6. Tests Required
+
+- 断言 profile 规范化、优先级、非法值、环境安全回退与 diagnostics。
+- 断言两个 profile 的默认 adapter 不同，但 downstream 组件类型和提交配置相同。
+- 断言依赖注入覆盖 profile 默认值，公开响应字段不变。
+- 断言两个 CLI 都把 `--protocol-profile` 传入 Agent/worker；旧 Agent 的兼容与拒绝路径均覆盖。
+- 在 `data/public_set.jsonl` 的 200 条公开集上复核官方回归基线：Hit@10 `1.0`、
+  MRR `0.805024`、MTTC `3.005`、technical score `0.901407`。
+
+### 7. Wrong vs Correct
+
+```python
+# Wrong: infer the evaluator from message shape.
+profile = "official" if message.startswith("I'm looking for") else "natural_language"
+
+# Correct: resolve once from explicit startup configuration.
+agent = Agent(protocol_profile=args.protocol_profile)
+```

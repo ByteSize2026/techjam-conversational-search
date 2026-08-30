@@ -14,10 +14,21 @@ import math
 import re
 
 from .catalog import CategoryResolution, CatalogRepository, ProductRecord, safe_terms
-from .state import Constraint, SessionState, normalize_constraint_value
+from .state import (
+    Constraint,
+    SessionState,
+    normalize_constraint_value,
+    rating_count_lower_bound,
+    rating_lower_bound,
+)
 
 
-FILTERABLE_ATTRIBUTES = frozenset({"material", "color", "budget", "feature"})
+FILTERABLE_ATTRIBUTES = frozenset(
+    {"brand", "material", "color", "size", "style", "budget", "feature"}
+)
+OFFICIAL_FILTERABLE_ATTRIBUTES = frozenset(
+    {"material", "color", "budget", "feature"}
+)
 _NUMBER_RE = re.compile(r"(?<!\w)\$?\s*(\d+(?:[,.]\d+)?)", re.I)
 _WORD_RE = re.compile(r"[^\W_]+", re.UNICODE)
 
@@ -107,8 +118,35 @@ def _contains_terms(text: str, value: object) -> bool:
     )
 
 
+def _title_contains_value(value: object) -> str | None:
+    match = re.match(r"^title\s+contains\s*:\s*(?P<token>.+)$", str(value or ""), re.I)
+    if match is None:
+        return None
+    token = str(match.group("token") or "").strip()
+    return token or None
+
+
+def _brand_text(record: ProductRecord) -> str:
+    parts = [record.store or ""]
+    for key, value in record.details.items():
+        if re.search(r"\b(?:brand|label|maker|manufacturer)\b", str(key), re.I):
+            parts.append(str(value))
+    return " ".join(parts)
+
+
 def _matches(record: ProductRecord, constraint: Constraint) -> bool:
     attribute = str(constraint.attribute).lower()
+    rating_floor = rating_lower_bound(constraint.value) if attribute == "feature" else None
+    if rating_floor is not None:
+        return record.rating is not None and float(record.rating) >= rating_floor
+    rating_count_floor = (
+        rating_count_lower_bound(constraint.value) if attribute == "feature" else None
+    )
+    if rating_count_floor is not None:
+        return record.rating_count is not None and int(record.rating_count) >= rating_count_floor
+    title_token = _title_contains_value(constraint.value) if attribute == "feature" else None
+    if title_token is not None:
+        return _contains_terms(record.title, title_token)
     if attribute == "budget":
         bounds = _budget_bounds(constraint.value)
         if bounds is None or record.price is None:
@@ -120,6 +158,8 @@ def _matches(record: ProductRecord, constraint: Constraint) -> bool:
     # token; use the same semantic normalization as the ranker so eligibility
     # and ordering cannot disagree about the value.
     value = normalize_constraint_value(attribute, constraint.value)
+    if attribute == "brand":
+        return _contains_terms(_brand_text(record), value)
     return _contains_terms(record.canonical_text, value)
 
 
@@ -133,9 +173,20 @@ def _constraint_key(constraint: Constraint) -> tuple[str, str]:
 class StructuredCandidatePool:
     """Build a full category pool and apply safe high-confidence filters."""
 
-    def __init__(self, repository: CatalogRepository, *, enabled: bool = True) -> None:
+    def __init__(
+        self,
+        repository: CatalogRepository,
+        *,
+        enabled: bool = True,
+        filterable_attributes: frozenset[str] | None = None,
+    ) -> None:
         self.repository = repository
         self.enabled = bool(enabled)
+        self.filterable_attributes = (
+            FILTERABLE_ATTRIBUTES
+            if filterable_attributes is None
+            else frozenset(filterable_attributes)
+        )
 
     def build(
         self,
@@ -165,7 +216,7 @@ class StructuredCandidatePool:
 
         for constraint in state.active_constraints:
             attribute = str(constraint.attribute).lower()
-            if attribute not in FILTERABLE_ATTRIBUTES:
+            if attribute not in self.filterable_attributes:
                 continue
             key = _constraint_key(constraint)
             if key in getattr(state, "softened_constraint_keys", set()):
@@ -180,6 +231,13 @@ class StructuredCandidatePool:
                     )
                 )
                 softened_keys.append(key)
+                continue
+            # Model-only semantic guesses remain ranking evidence.  Explicit
+            # model facts (or catalog-grounded profile facts) may filter when
+            # they are marked explicit; unverified model inferences may not.
+            if str(constraint.source).lower() == "model" and not bool(
+                getattr(constraint, "explicit", False)
+            ):
                 continue
             # Only explicit/high-confidence disclosures are eligible for hard
             # membership filtering.  Lower-confidence text remains rank
@@ -246,6 +304,7 @@ def build_structured_pool(
 
 __all__ = [
     "FILTERABLE_ATTRIBUTES",
+    "OFFICIAL_FILTERABLE_ATTRIBUTES",
     "ConstraintApplication",
     "StructuredCandidatePool",
     "StructuredPoolResult",

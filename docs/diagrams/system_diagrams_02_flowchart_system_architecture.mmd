@@ -1,0 +1,80 @@
+flowchart LR
+    User(["👤 顾客消息与匿名偏好"])
+    Dataset[("📄 public_set.jsonl")]
+    CatalogFile[("📦 catalog.jsonl")]
+
+    subgraph EvalBoundary["评测边界"]
+        Evaluator["🧮 evaluator.local_evaluator<br/>会话模拟、Top-10 过滤、指标"]
+    end
+
+    subgraph AgentBoundary["正式 Agent 边界：starter.agent.Agent"]
+        Facade["🚪 Facade / Orchestrator<br/>reset · respond · diagnostics"]
+
+        subgraph Dialogue["对话理解与状态"]
+            Interpreter["🧠 Intent Interpreter<br/>规则 + 可选模型"]
+            State["💾 Session Store + State Reducer<br/>约束、epoch、已问属性"]
+            Policy["🧭 Router + Gate + Clarification<br/>+ Commit Policy"]
+        end
+
+        subgraph Search["检索与候选"]
+            Repository[("🗄️ CatalogRepository<br/>SQLite FTS + 类目索引")]
+            Retrieval["🔍 RetrievalEngine<br/>多路召回与多样化"]
+            Structured["🎯 StructuredCandidatePool<br/>硬约束与可控放宽"]
+        end
+
+        subgraph RankAndReply["排序与响应"]
+            Ranking["📊 RankingEngine<br/>确定性特征排序"]
+            Semantic["✨ Semantic Ranker<br/>LLM 或 Qwen，可选"]
+            Response["🛡️ Response Adapter + Guard<br/>语义修复、ID 验证、fallback"]
+        end
+    end
+
+    subgraph ModelBoundary["可选模型边界"]
+        Tiered["☁️ TieredModelClient<br/>DeepSeek → 本地 OpenAI-compatible"]
+        Qwen["🤖 本地 Qwen Cross-Encoder<br/>显式 checkpoint"]
+    end
+
+    User -->|"多轮消息"| Evaluator
+    Dataset -->|"场景与目标"| Evaluator
+    Evaluator -->|"reset / respond"| Facade
+    CatalogFile -->|"启动时加载"| Repository
+
+    Facade --> Interpreter
+    Interpreter --> State
+    State --> Policy
+    Policy --> Retrieval
+    Policy --> Structured
+    Retrieval --> Repository
+    Structured --> Repository
+    Retrieval --> Ranking
+    Structured --> Ranking
+    Ranking -. "有界候选集" .-> Semantic
+    Semantic --> Response
+    Ranking --> Response
+    Response -->|"合同有效响应"| Evaluator
+    Evaluator -->|"Hit@10 · MRR · MTTC"| User
+
+    Interpreter -. "低置信消息" .-> Tiered
+    Semantic -. "远程/本地 API 路径" .-> Tiered
+    Semantic -. "本地重排路径" .-> Qwen
+    Tiered -. "失败时回退" .-> Interpreter
+    Tiered -. "失败时保留原排序" .-> Semantic
+    Qwen -. "失败时保留原排序" .-> Semantic
+
+    classDef actor fill:#FFF1A8,stroke:#8A6D00,stroke-width:2px,color:#332900
+    classDef external fill:#E6E6FA,stroke:#514B8B,stroke-width:2px,color:#1F1B4D
+    classDef facade fill:#FFD7C2,stroke:#9A3E00,stroke-width:3px,color:#3B1800
+    classDef dialogue fill:#DCEBFF,stroke:#245A9A,stroke-width:2px,color:#102A43
+    classDef search fill:#D9F2E6,stroke:#146B45,stroke-width:2px,color:#123524
+    classDef ranking fill:#E7F5D0,stroke:#4F772D,stroke-width:2px,color:#1B2E0E
+    classDef safety fill:#FFE0E6,stroke:#A61B3C,stroke-width:2px,color:#3A0B16
+    classDef model fill:#E5DEFF,stroke:#5B3FA3,stroke-width:2px,color:#25164F
+
+    class User actor
+    class Dataset,CatalogFile,Evaluator external
+    class Facade facade
+    class Interpreter,State,Policy dialogue
+    class Repository,Retrieval,Structured search
+    class Ranking ranking
+    class Response safety
+    class Semantic,Tiered,Qwen model

@@ -191,15 +191,16 @@ def response_message(attribute: str | None, over_general: bool) -> str:
 
     if not attribute:
         return FALLBACK_MESSAGE
-    label = {
-        "use_case": "intended use",
-        "other": "anything else that matters",
-    }.get(attribute, attribute)
     prefix = (
         "I found several possibilities."
         if over_general
         else "Here are the closest matches."
     )
+    if attribute == "other":
+        return f"{prefix} Is there anything else that matters to you?"
+    label = {
+        "use_case": "intended use",
+    }.get(attribute, attribute)
     return f"{prefix} Do you have a {label} preference?"
 
 

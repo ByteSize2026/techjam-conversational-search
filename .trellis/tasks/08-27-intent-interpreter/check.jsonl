@@ -1,0 +1,4 @@
+{"file": ".trellis/tasks/08-27-flexible-intent-adapter/research/natural-language-intent-scope.md", "reason": "核查跨架构结论、范围和降级约束"}
+{"file": ".trellis/spec/agent/contract-and-state.md", "reason": "核查解析状态迁移与 API 合同"}
+{"file": ".trellis/spec/evaluator/index.md", "reason": "核查场景非退化和 evaluator 边界"}
+{"file": ".trellis/spec/testing/unittest-fixtures.md", "reason": "核查解析与 fallback 测试覆盖"}

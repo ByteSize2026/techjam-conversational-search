@@ -14,6 +14,22 @@ import os
 from pathlib import Path
 
 
+DEFAULT_PROTOCOL_PROFILE = "official"
+PROTOCOL_PROFILES = frozenset({DEFAULT_PROTOCOL_PROFILE, "natural_language"})
+
+
+def normalize_protocol_profile(value: object, *, strict: bool = True) -> str:
+    """Return a supported explicit evaluator protocol profile."""
+
+    profile = str(value or DEFAULT_PROTOCOL_PROFILE).strip().lower()
+    if profile in PROTOCOL_PROFILES:
+        return profile
+    if strict:
+        allowed = ", ".join(sorted(PROTOCOL_PROFILES))
+        raise ValueError(f"protocol_profile must be one of: {allowed}")
+    return DEFAULT_PROTOCOL_PROFILE
+
+
 def _optional_text(value: object) -> str | None:
     """Return a stripped non-empty environment value, or ``None``."""
 
@@ -89,6 +105,8 @@ class AgentConfig:
     created by this class.
     """
 
+    protocol_profile: str = DEFAULT_PROTOCOL_PROFILE
+
     # DeepSeek is enabled only when ``deepseek_api_key`` is non-empty.
     deepseek_api_key: str | None = None
     deepseek_base_url: str = "https://api.deepseek.com"
@@ -107,6 +125,16 @@ class AgentConfig:
     retrieval_limit: int = 100
     model_max_tokens: int = 512
     temperature: float = 0.0
+
+    # Optional rule-first intent interpretation.  It is disabled by default
+    # so an existing deterministic deployment remains exactly offline until
+    # the operator explicitly opts in.  Supplying a model client directly to
+    # ``Agent``/``IntentInterpreter`` is an explicit integration opt-in.
+    intent_model_enabled: bool = False
+    intent_model_mode: str = "rules_first"
+    intent_model_trigger_threshold: float = 0.72
+    intent_model_accept_threshold: float = 0.65
+    intent_model_recent_turns: int = 4
 
     # Optional local Qwen3-Reranker.  A path is intentionally the opt-in
     # switch: model IDs are not accepted as a default because the evaluator
@@ -160,6 +188,13 @@ class AgentConfig:
     ranking_rating_weight: float = 0.05
     ranking_profile_weight: float = 0.08
 
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "protocol_profile",
+            normalize_protocol_profile(self.protocol_profile),
+        )
+
     @classmethod
     def from_env(cls) -> "AgentConfig":
         """Build a configuration from explicitly named environment values.
@@ -172,6 +207,9 @@ class AgentConfig:
 
         env = os.environ
         return cls(
+            protocol_profile=normalize_protocol_profile(
+                env.get("SHOPPING_AGENT_PROTOCOL_PROFILE"), strict=False
+            ),
             deepseek_api_key=_optional_text(
                 env.get("SHOPPING_AGENT_DEEPSEEK_API_KEY")
             ),
@@ -209,6 +247,29 @@ class AgentConfig:
             )
             if env.get("SHOPPING_AGENT_MODEL_TEMPERATURE") is not None
             else 0.0,
+            intent_model_enabled=_boolean(
+                env.get("SHOPPING_AGENT_INTENT_MODEL_ENABLED")
+                or env.get("SHOPPING_AGENT_INTENT_INTERPRETER_ENABLED"),
+                False,
+            ),
+            intent_model_mode=(
+                _optional_text(env.get("SHOPPING_AGENT_INTENT_MODEL_MODE"))
+                or "rules_first"
+            ).lower(),
+            intent_model_trigger_threshold=_bounded_unit_float(
+                env.get("SHOPPING_AGENT_INTENT_MODEL_TRIGGER_THRESHOLD")
+                or env.get("SHOPPING_AGENT_INTENT_TRIGGER_THRESHOLD"),
+                0.72,
+            ),
+            intent_model_accept_threshold=_bounded_unit_float(
+                env.get("SHOPPING_AGENT_INTENT_MODEL_ACCEPT_THRESHOLD")
+                or env.get("SHOPPING_AGENT_INTENT_ACCEPT_THRESHOLD"),
+                0.65,
+            ),
+            intent_model_recent_turns=_positive_int(
+                env.get("SHOPPING_AGENT_INTENT_MODEL_RECENT_TURNS"),
+                4,
+            ),
             qwen_reranker_model_path=_optional_text(
                 env.get("SHOPPING_AGENT_QWEN_RERANKER_MODEL_PATH")
                 or env.get("SHOPPING_AGENT_QWEN_RERANKER_PATH")
@@ -352,6 +413,12 @@ class AgentConfig:
         """Whether the local endpoint has the two required settings."""
 
         return bool(self.local_base_url and self.local_model)
+
+    @property
+    def intent_interpreter_enabled(self) -> bool:
+        """Compatibility alias for the optional intent model switch."""
+
+        return self.intent_model_enabled
 
     @property
     def qwen_reranker_model_path_resolved(self) -> str | None:

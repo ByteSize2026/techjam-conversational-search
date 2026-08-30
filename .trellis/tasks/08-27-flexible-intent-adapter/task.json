@@ -1,0 +1,38 @@
+{
+  "id": "flexible-intent-adapter",
+  "name": "flexible-intent-adapter",
+  "title": "规划灵活自然语言意图适配器",
+  "description": "规划一个比赛范围内、规则优先、模型可选且可离线降级的自然语言意图适配层，重点改进 scoped override、否定、多条件和查询改写。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": "starter shopping agent intent parsing, session state, model fallback, diagnostics, tests and evaluation; no catalog enrichment or dense infrastructure",
+  "package": null,
+  "priority": "P2",
+  "creator": "deequoique",
+  "assignee": "deequoique",
+  "createdAt": "2026-08-27",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "08-27-intent-interpreter"
+  ],
+  "parent": null,
+  "relatedFiles": [
+    "docs/competition_specification.md",
+    "docs/submission_rules.md",
+    "docs/agent_api_contract.json",
+    "starter/agent.py",
+    "starter/shopping_agent/state.py",
+    "starter/shopping_agent/model.py",
+    "tests/test_agent_contract.py",
+    "tests/test_deterministic_policy.py",
+    "tests/test_model_fallback.py"
+  ],
+  "notes": "",
+  "meta": {}
+}

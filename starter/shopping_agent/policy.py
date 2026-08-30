@@ -414,6 +414,32 @@ class ClarificationPolicy:
                 values.append(matched.lower())
         return values
 
+    @staticmethod
+    def _constraint_attribute_sets(
+        state: SessionState,
+    ) -> tuple[set[str], set[str]]:
+        """Split confirmed slots from model-only hypotheses.
+
+        A model suggestion can make a question less urgent, but it is not a
+        customer answer.  In particular, keeping model-only attributes out of
+        ``confirmed`` means a high-information inferred slot remains eligible
+        for a later clarification turn.
+        """
+
+        confirmed: set[str] = set()
+        model_only: set[str] = set()
+        for item in state.active_constraints:
+            attribute = str(item.attribute)
+            if (
+                str(getattr(item, "source", "rule") or "rule").lower() == "model"
+                and not bool(getattr(item, "explicit", False))
+            ):
+                model_only.add(attribute)
+            else:
+                confirmed.add(attribute)
+        model_only.difference_update(confirmed)
+        return confirmed, model_only
+
     def _utility(
         self,
         attribute: str,
@@ -435,7 +461,12 @@ class ClarificationPolicy:
         base = 0.18 * self.ATTRIBUTE_ORDER.index(attribute)
         if attribute == "other":
             base -= 1.0
-        return entropy + min(evidence, 10) * 0.02 - base
+        # Model-only evidence is useful, but should not outrank an equally
+        # informative slot backed by the user's words.  The slot remains in
+        # the candidate set, so sufficient entropy/evidence can still win.
+        _confirmed, model_only = self._constraint_attribute_sets(state)
+        model_penalty = 0.25 if attribute in model_only else 0.0
+        return entropy + min(evidence, 10) * 0.02 - base - model_penalty
 
     def choose_attribute(
         self,
@@ -458,11 +489,16 @@ class ClarificationPolicy:
         ):
             return None
         exhausted = getattr(state, "attribute_exhausted", set()) | state.no_preference
+        confirmed_attributes, _ = self._constraint_attribute_sets(state)
         if one_turn_reopen:
             # This is an event-scoped bypass, not a state transition.  Do not
             # ask the protocol fallback or any slot the user already
             # exhausted, answered, or constrained in the current epoch.
-            active_attributes = {item.attribute for item in state.active_constraints}
+            excluded_attributes = (
+                {item.attribute for item in state.active_constraints}
+                if self.mode == "protocol_aware"
+                else confirmed_attributes
+            )
             available = [
                 attribute
                 for attribute in self.ATTRIBUTE_ORDER
@@ -470,7 +506,7 @@ class ClarificationPolicy:
                 and attribute != "other"
                 and attribute not in exhausted
                 and attribute not in state.asked_set
-                and attribute not in active_attributes
+                and attribute not in excluded_attributes
             ]
             if not available:
                 return None
@@ -495,7 +531,10 @@ class ClarificationPolicy:
         boundary_reask_has_value = not candidates or len(candidates) > 5
         if (
             self.mode == "protocol_aware"
-            and ("other" not in exhausted or (boundary_other_reask and boundary_reask_has_value))
+            and (
+                "other" not in exhausted
+                or (boundary_other_reask and boundary_reask_has_value)
+            )
             and getattr(state, "no_progress_streak", 0) < 2
         ):
             return "other"
@@ -505,12 +544,16 @@ class ClarificationPolicy:
             if attribute in ALLOWED_ATTRIBUTES
             and attribute not in exhausted
             and attribute not in state.asked_set
+            and (
+                self.mode == "protocol_aware"
+                or attribute not in confirmed_attributes
+            )
         ]
         if not available:
             return None
         if self.mode == "protocol_aware":
-            # Prefer attributes with actual candidate evidence, but retain a
-            # stable order when the fixture/catalog contains no metadata.
+            # Official simulator replies follow a stable attribute protocol;
+            # retain that order rather than applying natural-language entropy.
             with_evidence = [
                 attribute
                 for attribute in available

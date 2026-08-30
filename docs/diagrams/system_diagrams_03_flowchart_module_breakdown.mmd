@@ -1,0 +1,44 @@
+flowchart TB
+    Root["📦 TechJam 多轮对话电商搜索"]
+
+    Root --> Runtime["⚙️ 正式运行时"]
+    Root --> Evaluation["🧮 评测与合同"]
+    Root --> Support["🧪 开发支撑"]
+
+    Runtime --> Entry["starter/agent.py<br/>唯一入口、依赖组装、整轮编排"]
+    Runtime --> Core["starter/shopping_agent/"]
+
+    Core --> Config["config.py<br/>离线安全配置"]
+    Core --> Data["catalog.py<br/>商品模型、FTS、类目索引"]
+    Core --> Intent["intent.py + intent_interpreter.py<br/>规则解析、模型适配、JSON 验证"]
+    Core --> State["state.py<br/>会话、约束、epoch、进度"]
+    Core --> Policy["policy.py<br/>路由、gate、追问、提交"]
+    Core --> Candidate["retrieval.py + structured_pool.py<br/>多路召回、结构化候选池"]
+    Core --> Rank["ranking.py<br/>特征、证据、确定性排序"]
+    Core --> Model["model.py<br/>分层后端、usage、失败分类"]
+    Core --> Optional["semantic_ranking.py + qwen_reranker.py<br/>可选语义重排"]
+    Core --> Response["response.py<br/>响应适配、合同守卫、fallback"]
+
+    Evaluation --> Evaluator["evaluator/local_evaluator.py<br/>顾客模拟、ID 标准化、指标"]
+    Evaluation --> Contract["docs/agent_api_contract.json<br/>公开请求/响应 schema"]
+    Evaluation --> DataFiles["data/<br/>public_set.jsonl + 本地 catalog"]
+
+    Support --> Tests["tests/<br/>合同、状态、召回、排序、fallback"]
+    Support --> Bench["tests/benchmarks/<br/>adaptive recall + Qwen 诊断"]
+    Support --> Notebook["notebooks/<br/>离线模型实验"]
+    Support --> Docs["docs/<br/>规范、架构、开发指南"]
+    Support --> Trellis[".trellis/<br/>任务、规范、工作日志"]
+
+    classDef root fill:#FFD7C2,stroke:#9A3E00,stroke-width:3px,color:#3B1800
+    classDef group fill:#FFF1A8,stroke:#8A6D00,stroke-width:2px,color:#332900
+    classDef runtime fill:#D9F2E6,stroke:#146B45,stroke-width:2px,color:#123524
+    classDef evaluation fill:#DCEBFF,stroke:#245A9A,stroke-width:2px,color:#102A43
+    classDef support fill:#E6E6FA,stroke:#514B8B,stroke-width:2px,color:#1F1B4D
+    classDef safety fill:#FFE0E6,stroke:#A61B3C,stroke-width:2px,color:#3A0B16
+
+    class Root root
+    class Runtime,Evaluation,Support group
+    class Entry,Core,Config,Data,Intent,State,Policy,Candidate,Rank,Model,Optional runtime
+    class Evaluator,Contract,DataFiles evaluation
+    class Tests,Bench,Notebook,Docs,Trellis support
+    class Response safety

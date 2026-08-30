@@ -1,0 +1,38 @@
+flowchart TD
+    Start(["🚀 Evaluator 发起一轮"]) --> Session["💾 读取或初始化 SessionState"]
+    Session --> Interpret["🧠 IntentInterpreter<br/>规则优先，模型可选"]
+    Interpret --> Reduce["🔄 StateReducer<br/>合并约束与 intent epoch"]
+    Reduce --> Route{"🧭 IntentRouter<br/>购买还是浏览？"}
+    Route -->|"购买导向"| Category["📦 类目与结构化召回"]
+    Route -->|"浏览导向"| Lexical["🔍 词法与多路召回"]
+    Category --> Merge["🧩 合并、去重、多样化候选"]
+    Lexical --> Merge
+    Merge --> Pool["🎯 StructuredCandidatePool<br/>应用硬约束，必要时逐步放宽"]
+    Pool --> Gate{"🚦 CandidateGate<br/>是否运行语义重排？"}
+    Gate --> Feature["📊 RankingEngine<br/>确定性特征排序"]
+    Feature -->|"否"| Progress["📈 更新排名稳定性与会话进度"]
+    Feature -->|"是：Top-30 上限"| Semantic["✨ LLM 或 Qwen 语义重排"]
+    Semantic --> SemanticOK{"✅ 输出合法？"}
+    SemanticOK -->|"是"| Apply["🔄 合并语义顺序"]
+    SemanticOK -->|"否"| Fallback["🛡️ 保留确定性顺序"]
+    Apply --> Progress
+    Fallback --> Progress
+    Progress --> Decide{"💬 继续追问还是提交？"}
+    Decide -->|"信息不足"| Ask["❓ ClarificationPolicy<br/>选择未问且信息量高的属性"]
+    Decide -->|"证据充足或轮次紧张"| Commit["🎯 CommitPolicy<br/>输出合法 parent_asin"]
+    Ask --> Guard["🛡️ Response Guard<br/>合同校验与 fallback"]
+    Commit --> Guard
+    Guard --> Eval["🧮 Evaluator<br/>保留前 10 个合法唯一 ID 并评分"]
+    Eval --> End(["✅ 本轮完成"])
+
+    classDef endpoint fill:#E6E6FA,stroke:#333333,stroke-width:2px,color:#102A43
+    classDef process fill:#D9F2E6,stroke:#146B45,stroke-width:2px,color:#123524
+    classDef decision fill:#FFF1A8,stroke:#8A6D00,stroke-width:2px,color:#332900
+    classDef optional fill:#DCEBFF,stroke:#245A9A,stroke-width:2px,color:#102A43
+    classDef safety fill:#FFE0E6,stroke:#A61B3C,stroke-width:2px,color:#3A0B16
+
+    class Start,End endpoint
+    class Session,Interpret,Reduce,Category,Lexical,Merge,Pool,Feature,Progress,Apply,Ask,Commit,Eval process
+    class Route,Gate,SemanticOK,Decide decision
+    class Semantic optional
+    class Fallback,Guard safety

@@ -295,15 +295,30 @@ def evaluate(
     }
 
 
-def main() -> None:
+def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="TechJam public-set local evaluator")
     parser.add_argument("--catalog", default="data/catalog.jsonl")
     parser.add_argument("--dataset", default="data/public_set.jsonl")
     parser.add_argument("--output", default="results.json")
-    args = parser.parse_args()
+    parser.add_argument(
+        "--protocol-profile",
+        choices=("official", "natural_language"),
+        default="official",
+    )
+    return parser
+
+
+def main() -> None:
+    args = _parser().parse_args()
     samples = load_jsonl(args.dataset)
     catalog_ids, categories, products = catalog_index(args.catalog)
-    result = evaluate(Agent(args.catalog), samples, catalog_ids, categories, products)
+    result = evaluate(
+        Agent(args.catalog, protocol_profile=args.protocol_profile),
+        samples,
+        catalog_ids,
+        categories,
+        products,
+    )
     Path(args.output).write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({key: value for key, value in result.items() if key != "sessions"}, indent=2))
 

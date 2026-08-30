@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/08-27-flexible-intent-adapter/research/natural-language-intent-scope.md", "reason": "比赛范围、现状证据、路线取舍与验证策略"}
+{"file": ".trellis/spec/agent/index.md", "reason": "Agent 接口、会话状态和输出合同"}
+{"file": ".trellis/spec/data-contracts/index.md", "reason": "冻结目录、隐私和离线提交边界"}
+{"file": ".trellis/spec/evaluator/index.md", "reason": "四场景协议、精确命中和评分约束"}
+{"file": ".trellis/spec/testing/index.md", "reason": "unittest 与确定性 fixture 规范"}

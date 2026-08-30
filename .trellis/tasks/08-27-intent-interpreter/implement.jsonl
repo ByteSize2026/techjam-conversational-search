@@ -1,0 +1,4 @@
+{"file": ".trellis/tasks/08-27-flexible-intent-adapter/research/natural-language-intent-scope.md", "reason": "父任务的比赛边界、现状证据和模型取舍"}
+{"file": ".trellis/spec/agent/index.md", "reason": "Agent 接口、模块和会话状态规范"}
+{"file": ".trellis/spec/agent/contract-and-state.md", "reason": "Intent Override、Boundary 和状态隔离规则"}
+{"file": ".trellis/spec/testing/index.md", "reason": "unittest 基线与 fixture 规范"}

@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/agent/index.md", "reason": "Preserve Agent contract while injecting a benchmark repository"}
+{"file": ".trellis/spec/testing/index.md", "reason": "Follow unittest and temporary fixture conventions"}
+{"file": ".trellis/spec/guides/offline-reproducibility.md", "reason": "Keep live assets and credentials optional and external"}
+{"file": ".trellis/tasks/08-29-ecomagentbench-evaluation/research/ecomagentbench-compatibility.md", "reason": "Implement against measured protocol and data differences"}

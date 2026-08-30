@@ -37,6 +37,7 @@ IntentScope = Literal[
 ]
 
 EvidenceKind = Literal["initial", "direct", "clarification", "override"]
+EvidenceSource = Literal["user", "rule", "model", "profile"]
 
 ALLOWED_ATTRIBUTES: frozenset[str] = frozenset(
     {
@@ -114,6 +115,41 @@ _BUDGET_RE = re.compile(
     r"(?:\$\s*\d+(?:[,.]\d+)?|\b(?:under|below|less than|around|budget(?: of)?|up to)\s+\$?\s*\d+(?:[,.]\d+)?)",
     re.I,
 )
+_RATING_LOWER_BOUND_RE = re.compile(
+    r"^rating\s*:\s*(?P<value>[0-5](?:\.\d+)?)\s*stars?\s*"
+    r"(?:or\s+higher|and\s+above|minimum|at\s+least)?$",
+    re.I,
+)
+_RATING_COUNT_LOWER_BOUND_RE = re.compile(
+    r"^rating_count\s*:\s*(?P<value>\d[\d,]*)\s*(?:reviews?\s*)?"
+    r"(?:or\s+(?:more|above)|and\s+above|minimum|at\s+least)?$",
+    re.I,
+)
+
+
+def rating_lower_bound(value: object) -> float | None:
+    """Parse only the canonicalizer's bounded minimum-rating evidence."""
+
+    match = _RATING_LOWER_BOUND_RE.fullmatch(_clean(value, 80))
+    if match is None:
+        return None
+    parsed = float(match.group("value"))
+    return parsed if 0.0 <= parsed <= 5.0 else None
+
+
+def rating_count_lower_bound(value: object) -> int | None:
+    """Parse canonical minimum-review-count evidence."""
+
+    match = _RATING_COUNT_LOWER_BOUND_RE.fullmatch(_clean(value, 80))
+    if match is None:
+        return None
+    try:
+        parsed = int(match.group("value").replace(",", ""))
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
 def _clean(value: object, limit: int = 180) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip(" \t\r\n-;,.")[:limit].rstrip()
 
@@ -195,7 +231,14 @@ def _attribute_name(value: object) -> str:
 def _split_values(value: str) -> list[str]:
     # The simulator uses semicolons, but accepting a small set of separators
     # also works for natural paraphrases without creating one huge constraint.
-    pieces = re.split(r"\s*;\s*|\s+and\s+|\s*,\s*", value, flags=re.I)
+    # Consume a conjunction after a comma as part of the separator.  Without
+    # this, `black, under $80, and suitable for running` leaves a spurious
+    # `and suitable ...` evidence term.
+    pieces = re.split(
+        r"\s*;\s*|\s*,\s*(?:and\s+|or\s+)?|\s+(?:and|or)\s+",
+        value,
+        flags=re.I,
+    )
     output: list[str] = []
     for piece in pieces:
         cleaned = _clean(piece)
@@ -220,6 +263,11 @@ class QueryEvidence:
     attribute_hint: str | None = None
     confidence: float = 1.0
     status: str = "active"
+    # ``kind`` describes disclosure/override provenance while ``source``
+    # describes the producer.  The latter is optional for compatibility with
+    # the original provenance objects and is useful when model-only evidence
+    # is downgraded to a soft query term.
+    source: EvidenceSource = "rule"
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -230,6 +278,7 @@ class QueryEvidence:
             "attribute_hint": self.attribute_hint,
             "confidence": self.confidence,
             "status": self.status,
+            "source": self.source,
         }
 
 
@@ -246,6 +295,7 @@ class Constraint:
     active: bool = True
     status: str = "active"
     disclosure_kind: EvidenceKind = "direct"
+    explicit: bool = False
 
     @property
     def kind(self) -> EvidenceKind:
@@ -269,6 +319,7 @@ class Constraint:
             "active": self.active,
             "status": self.status,
             "disclosure_kind": self.disclosure_kind,
+            "explicit": self.explicit,
         }
 
 
@@ -282,6 +333,7 @@ class ConstraintMutation:
     source: Literal["user", "profile", "model", "rule"] = "user"
     confidence: float = 1.0
     disclosure_kind: EvidenceKind = "direct"
+    explicit: bool = False
 
 
 @dataclass(frozen=True)
@@ -388,6 +440,31 @@ class SessionState:
     @property
     def active_preferences(self) -> list[Constraint]:
         return [item for item in self.active_constraints if item.polarity != "avoid"]
+
+    @property
+    def confirmed_attributes(self) -> set[str]:
+        """Return slots supported by a user/rule/profile constraint.
+
+        Model-only constraints remain active ranking evidence, but they are
+        hypotheses rather than customer-confirmed answers.  Keeping this
+        distinction available to policy callers prevents a model suggestion
+        from silently making a slot unaskable.
+        """
+
+        return {
+            str(item.attribute)
+            for item in self.active_constraints
+            if str(getattr(item, "source", "rule") or "rule").lower() != "model"
+            or bool(getattr(item, "explicit", False))
+        }
+
+    @property
+    def model_only_attributes(self) -> set[str]:
+        """Return slots represented only by model-produced active evidence."""
+
+        active = self.active_constraints
+        all_attributes = {str(item.attribute) for item in active}
+        return all_attributes - self.confirmed_attributes
 
     @property
     def avoided_values(self) -> list[Constraint]:
@@ -528,6 +605,14 @@ class SessionState:
         if not isinstance(profile_tags, (list, tuple, set)):
             profile_tags = ()
         exhausted = self.no_preference | self.attribute_exhausted
+        # A model-only slot is not a confirmed customer answer.  It remains
+        # available to clarification policy even while contributing a weak
+        # ranking/recall signal.
+        confirmed_attributes = {
+            str(item.attribute)
+            for item in active
+            if str(getattr(item, "source", "rule") or "rule").lower() != "model"
+        }
         unanswered = tuple(
             attribute
             for attribute in (
@@ -540,9 +625,7 @@ class SessionState:
                 "feature",
                 "use_case",
             )
-            if attribute not in exhausted and not any(
-                item.attribute == attribute for item in active
-            )
+            if attribute not in exhausted and attribute not in confirmed_attributes
         )
         return RuntimeContext(
             route_hint=route_hint or self.active_route,
@@ -609,7 +692,14 @@ class StateReducer:
     def _mutation_key(mutation: ConstraintMutation) -> tuple[str, str] | None:
         attribute = _attribute_name(mutation.attribute)
         value = _clean(mutation.value)
-        if attribute not in ALLOWED_ATTRIBUTES or not value:
+        if attribute not in ALLOWED_ATTRIBUTES:
+            return None
+        # A value-less remove is the explicit "color no longer matters"
+        # operation.  It is intentionally distinct from an empty upsert,
+        # which remains invalid.
+        if mutation.action == "remove" and not value:
+            return (attribute, "")
+        if not value:
             return None
         return (
             attribute,
@@ -793,7 +883,14 @@ class StateReducer:
         if state.category_anchor is None and update.category_anchor:
             state.category_anchor = _clean(update.category_anchor, 120)
 
-        for attribute in update.no_preference:
+        no_preference_attributes = set(update.no_preference)
+        if update.global_exhausted:
+            # A global "no more preferences" boundary means the customer has
+            # no new facts to add.  It must not be reinterpreted as withdrawing
+            # an existing product attribute.  Retain ``other`` only as the
+            # protocol-level record that the broad slot has been exhausted.
+            no_preference_attributes.intersection_update({"other"})
+        for attribute in no_preference_attributes:
             normalized = _attribute_name(attribute)
             if normalized not in ALLOWED_ATTRIBUTES:
                 continue
@@ -808,6 +905,11 @@ class StateReducer:
                 if item.active and item.attribute == normalized and item.hardness != "hard":
                     item.active = False
                     item.status = "no_preference"
+            for item in state.query_evidence:
+                if item.status != "active":
+                    continue
+                if item.attribute_hint and _attribute_name(item.attribute_hint) == normalized:
+                    self._supersede_query_evidence(item, status="no_preference")
 
         if update.global_exhausted:
             state.global_exhausted = True
@@ -819,7 +921,30 @@ class StateReducer:
         for mutation in mutations:
             attribute = _attribute_name(mutation.attribute)
             value = _clean(mutation.value)
-            if attribute not in ALLOWED_ATTRIBUTES or not value:
+            if attribute not in ALLOWED_ATTRIBUTES:
+                continue
+            if mutation.action == "remove" and not value:
+                # Value-less removal means that the slot itself no longer
+                # matters (for example, ``color no longer matters``).  It is
+                # distinct from an invalid empty upsert and must retire every
+                # active value for this attribute.
+                state.no_preference.add(attribute)
+                state.attribute_exhausted.add(attribute)
+                for item in state.constraints:
+                    if item.active and item.attribute == attribute:
+                        self._supersede_constraint(
+                            state,
+                            item,
+                            status="removed",
+                            keys=superseded_keys,
+                        )
+                for item in state.query_evidence:
+                    if item.status != "active":
+                        continue
+                    if item.attribute_hint and _attribute_name(item.attribute_hint) == attribute:
+                        self._supersede_query_evidence(item, status="removed")
+                continue
+            if not value:
                 continue
             state.no_preference.discard(attribute)
             state.attribute_exhausted.discard(attribute)
@@ -878,6 +1003,7 @@ class StateReducer:
                     turn=int(turn),
                     epoch=state.intent_epoch,
                     disclosure_kind=mutation.disclosure_kind,
+                    explicit=bool(getattr(mutation, "explicit", False)),
                 )
             )
 
@@ -906,6 +1032,7 @@ class StateReducer:
                         else None
                     ),
                     confidence=float(update.confidence),
+                    source=("model" if update.confidence < 0.8 else "rule"),
                 )
                 for term in update.query_terms
                 if _clean(term, 100)
@@ -956,6 +1083,11 @@ class StateReducer:
                     ),
                     confidence=max(0.0, min(1.0, float(incoming.confidence))),
                     status="active",
+                    source=(
+                        incoming.source
+                        if incoming.source in {"user", "rule", "model", "profile"}
+                        else "rule"
+                    ),
                 )
             )
         if len(state.query_evidence) > 80:
@@ -1000,6 +1132,7 @@ __all__ = [
     "Constraint",
     "ConstraintMutation",
     "EvidenceKind",
+    "EvidenceSource",
     "IntentUpdate",
     "IntentScope",
     "QueryEvidence",
@@ -1009,5 +1142,7 @@ __all__ = [
     "StateReducer",
     "TurnMessage",
     "normalize_constraint_value",
+    "rating_count_lower_bound",
+    "rating_lower_bound",
     "parse_intent_update",
 ]

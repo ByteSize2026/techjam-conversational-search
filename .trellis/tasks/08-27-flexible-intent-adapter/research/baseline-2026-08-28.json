@@ -1,0 +1,23 @@
+{
+  "generated_at": "2026-08-28",
+  "command": "python3 -m evaluator.local_evaluator --catalog data/catalog.jsonl --dataset data/public_set.jsonl --output /tmp/intent-interpreter-current-baseline.json",
+  "agent": "starter.agent.Agent",
+  "model_mode": "deterministic (no model configuration)",
+  "sample_count": 200,
+  "hit_rate_at_10": 1.0,
+  "mrr": 0.805024,
+  "mttc": 3.005,
+  "efficiency": 0.7995,
+  "recommended_technical_score": 0.901407,
+  "reported_token_usage": {
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "total_tokens": 0
+  },
+  "scenario_metrics": {
+    "boundary": {"sample_count": 10, "hit_rate_at_10": 1.0, "mrr": 0.92, "mttc": 3.5},
+    "browsing": {"sample_count": 80, "hit_rate_at_10": 1.0, "mrr": 0.776801, "mttc": 2.75},
+    "buying": {"sample_count": 80, "hit_rate_at_10": 1.0, "mrr": 0.812723, "mttc": 2.55},
+    "intent_override": {"sample_count": 30, "hit_rate_at_10": 1.0, "mrr": 0.821429, "mttc": 4.733333}
+  }
+}

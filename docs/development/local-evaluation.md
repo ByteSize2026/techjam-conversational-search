@@ -39,6 +39,7 @@ Intent Override、Boundary、重复/无效 ID 或 miss 边界仍被覆盖。
 
 ```bash
 python3 -m evaluator.local_evaluator \
+  --protocol-profile official \
   --catalog data/catalog.jsonl \
   --dataset data/public_set.jsonl \
   --output results.json
@@ -69,12 +70,18 @@ python3 -m evaluator.local_evaluator --help
 不是当前工作区 Agent 的预期固定结果。比较改动时应保存各次实际运行结果，并记录所用代码、
 配置、catalog 与数据集。
 
+当前分支的 `official` profile 在冻结的 50,000 商品 catalog 和 200 条 `public_set` 上应复现：
+Hit@10 `1.0`、MRR `0.805024`、MTTC `3.005`、Efficiency `0.7995`、推荐技术分
+`0.901407`。协议适配、追问顺序或结构化字段准入发生变化时，应把这些值作为回归闸门；
+自然语言 benchmark 的结果不能替代该验证。
+
 ## 避免覆盖已有结果
 
 `--output` 会写入指定路径。做临时验证时可写到 `/tmp`：
 
 ```bash
 python3 -m evaluator.local_evaluator \
+  --protocol-profile official \
   --catalog data/catalog.jsonl \
   --dataset data/public_set.jsonl \
   --output /tmp/techjam-results.json

@@ -1,0 +1,7 @@
+{"file":".trellis/spec/agent/index.md","reason":"Agent development checklist and stable interface boundary."}
+{"file":".trellis/spec/agent/contract-and-state.md","reason":"Intent/state provenance, override, policy, compatibility and offline model constraints."}
+{"file":".trellis/spec/testing/index.md","reason":"Required unittest workflow and quality gate."}
+{"file":".trellis/spec/testing/unittest-fixtures.md","reason":"Deterministic offline failure and policy fixture patterns."}
+{"file":".trellis/spec/guides/offline-reproducibility.md","reason":"Hard redline for no-key/no-network fallback and reproducibility."}
+{"file":".trellis/spec/guides/change-impact.md","reason":"Cross-layer impact matrix for intent, state, retrieval and policy changes."}
+{"file":".trellis/tasks/08-29-deepseek-first-intent/research/diagnostic-findings.md","reason":"Measured failure signatures and ablation evidence motivating the design."}

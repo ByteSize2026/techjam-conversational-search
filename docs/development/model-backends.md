@@ -1,7 +1,33 @@
 # 配置可选模型后端
 
-Agent 默认使用确定性召回与排序。模型只负责对有界候选集进行可选语义重排；没有配置、
-请求失败、JSON 无效或输出 ID 不合法时，系统继续使用原确定性候选顺序。
+Agent 默认使用确定性召回与排序。模型可选地用于自然语言意图解释和有界候选集语义重排；
+没有配置、请求失败、JSON 无效或输出 ID 不合法时，系统继续使用确定性路径。
+
+## 选择协议 Profile
+
+`official` 是零参数默认值，使用冻结的官方协议 adapter；`natural_language` 使用自然语言意图
+适配。两者共享召回、排序和推荐提交策略：
+
+```bash
+python3 -m evaluator.local_evaluator --protocol-profile official
+```
+
+也可设置 `SHOPPING_AGENT_PROTOCOL_PROFILE=official|natural_language`，或在 Python 中传入
+`Agent(protocol_profile=...)`。profile 本身不会启用模型或网络；下文的模型开关仍需
+单独显式配置。
+
+## 使用本地 `.env`
+
+仓库提供不含任何密钥的 [`.env.example`](../../.env.example)。本机已创建并忽略 `.env`；
+填写可用 backend 后，在运行评测或 Agent 前执行：
+
+```bash
+set -a; source .env; set +a
+python3 -m evaluator.local_evaluator
+```
+
+Python 标准库不会自动加载 `.env`，因此需要显式 `source`。`.env` 已被 `.gitignore` 排除，
+但仍不得将真实 key 复制到源码、JSONL、测试或报告中。
 
 ## 选择一种模式
 
@@ -15,6 +41,41 @@ Agent 默认使用确定性召回与排序。模型只负责对有界候选集�
 
 Qwen 是 Agent 环境配置中的显式优先路径。若同时设置 Qwen checkpoint 和 LLM tier 变量，
 Agent 使用 Qwen，不再构造 LLM semantic ranker。
+
+## 可选意图模型
+
+意图解释器默认关闭，规则解析始终是完整离线 fallback。只有设置以下开关才会在规则低置信、
+作用域不清或存在指代等难例时调用 LLM；明确的协议模板不会调用模型：
+
+```bash
+export SHOPPING_AGENT_INTENT_MODEL_ENABLED=true
+```
+
+意图模型模式默认保持 `rules_first`，以兼容既有离线行为。需要让 DeepSeek 优先解释每轮
+自然语言时，显式设置：
+
+```bash
+export SHOPPING_AGENT_INTENT_MODEL_MODE=model_first
+```
+
+`model_first` 只提高模型对用户原文的解释权，不改变安全校验；无 key、无网络、超时或
+非法响应时仍原子回退到规则结果。设置 `rules_first` 可立即回滚到按规则置信度触发模型。
+
+实验分支还支持 `canonicalizer`：DeepSeek 不直接修改状态，而是把自然语言改写成一行一个
+事实的闭合模板，再交给现有确定性解析器。模板字段只允许 `category`、`brand`、`budget`、
+`rating`、`color`、`material`、`size`、`style`、`feature` 和 `use_case`。其中枚举型值还必须
+命中本地 catalog 的同字段索引；未知字段或任一非法值会使整轮翻译作废并原子回退。标题词
+只参与 FTS 召回，不会自动成为结构化 feature。该校验只读取启动时载入的本地 catalog，
+不引入网络或第三方依赖。
+
+模型按 `DeepSeek API → 本地 OpenAI-compatible endpoint → 确定性规则` 降级。可选控制项：
+
+| 环境变量 | 默认值 | 作用 |
+| --- | ---: | --- |
+| `SHOPPING_AGENT_INTENT_MODEL_TRIGGER_THRESHOLD` | `0.72` | 规则置信度低于此值时可触发模型 |
+| `SHOPPING_AGENT_INTENT_MODEL_ACCEPT_THRESHOLD` | `0.65` | 模型把显式硬约束保留为 hard 的最低置信度 |
+| `SHOPPING_AGENT_INTENT_MODEL_RECENT_TURNS` | `4` | 发送给模型的最近轮次上限 |
+| `SHOPPING_AGENT_INTENT_MODEL_MODE` | `rules_first` | `rules_first`、`model_first` 或实验性 `canonicalizer`；模型失败始终离线回退 |
 
 ## DeepSeek API
 

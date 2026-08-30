@@ -13,6 +13,7 @@ from starter.shopping_agent.policy import (
     RecommendationCommitPolicy,
 )
 from starter.shopping_agent.state import (
+    CandidateStats,
     Constraint,
     ConstraintMutation,
     IntentUpdate,
@@ -91,18 +92,83 @@ class ExhaustionStateTests(unittest.TestCase):
         self.assertFalse(state.global_exhausted)
         self.assertEqual(state.intent_epoch, 1)
 
-    def test_other_can_repeat_until_no_progress_or_global_exhaustion(self) -> None:
+    def test_global_exhaustion_preserves_existing_query_evidence(self) -> None:
+        reducer = StateReducer()
+        state = SessionState("s")
+        reducer.apply(
+            state,
+            parse_intent_update("Please look for ZYJLM.", turn=1),
+            turn=1,
+        )
+        before_terms = list(state.active_query_terms)
+        # Preference boilerplate is removed before lexical evidence enters
+        # state; exhaustion must preserve the precise payload itself.
+        self.assertEqual(before_terms, ["ZYJLM"])
+        self.assertEqual(state.active_query_evidence[0].attribute_hint, "feature")
+
+        exhausted = parse_intent_update(
+            "I have no additional preferences to add.",
+            turn=2,
+            asked_attribute="other",
+        )
+        self.assertTrue(exhausted.global_exhausted)
+        self.assertEqual(exhausted.no_preference, frozenset({"other"}))
+        reducer.apply(state, exhausted, turn=2)
+
+        self.assertTrue(state.global_exhausted)
+        self.assertEqual(state.active_query_terms, before_terms)
+        self.assertNotIn("feature", state.no_preference)
+        self.assertNotIn("feature", state.attribute_exhausted)
+
+    def test_other_is_asked_once_then_policy_chooses_highest_information_slot(self) -> None:
         from starter.shopping_agent.policy import ClarificationPolicy
 
-        policy = ClarificationPolicy()
+        policy = ClarificationPolicy(mode="catalog_entropy")
         state = SessionState("s")
         self.assertEqual(policy.choose_attribute(state, turn=1, remaining_turns=9), "other")
         state.record_asked("other")
-        self.assertEqual(policy.choose_attribute(state, turn=2, remaining_turns=8), "other")
+        stats = CandidateStats(
+            attribute_entropy={
+                "material": 0.4,
+                "color": 1.7,
+                "size": 1.4,
+                "style": 1.3,
+                "brand": 4.1,
+                "budget": 0.0,
+                "feature": 1.0,
+                "use_case": 1.5,
+            }
+        )
+        self.assertEqual(
+            policy.choose_attribute(
+                state,
+                stats=stats,
+                turn=2,
+                remaining_turns=8,
+            ),
+            "brand",
+        )
         state.no_progress_streak = 2
         self.assertNotEqual(policy.choose_attribute(state, turn=3, remaining_turns=7), "other")
         state.global_exhausted = True
         self.assertIsNone(policy.choose_attribute(state, turn=4, remaining_turns=6))
+
+    def test_boundary_can_reopen_other_once_even_after_initial_broad_question(self) -> None:
+        policy = ClarificationPolicy()
+        state = SessionState("s")
+        state.record_asked("other")
+        state.no_preference.add("other")
+        state.boundary_seen = True
+
+        self.assertEqual(
+            policy.choose_attribute(
+                state,
+                [{"title": f"candidate {index}"} for index in range(6)],
+                turn=2,
+                remaining_turns=8,
+            ),
+            "other",
+        )
 
     def test_reopen_requires_rejection_and_explicit_clarification_request(self) -> None:
         reopen = parse_intent_update(
@@ -425,6 +491,48 @@ class ProvenanceOverrideTests(unittest.TestCase):
 
 
 class StructuredPoolTests(unittest.TestCase):
+    def test_numeric_and_title_feature_constraints_filter_complete_category(self) -> None:
+        repository = CatalogRepository(
+            records=[
+                {
+                    "parent_asin": "MATCH",
+                    "title": "Mojo walking shoe",
+                    "categories": ["Root", "Shoes"],
+                    "average_rating": 4.8,
+                    "rating_number": 300,
+                },
+                {
+                    "parent_asin": "LOW-COUNT",
+                    "title": "Mojo casual shoe",
+                    "categories": ["Root", "Shoes"],
+                    "average_rating": 4.8,
+                    "rating_number": 20,
+                },
+                {
+                    "parent_asin": "OTHER-TITLE",
+                    "title": "Plain walking shoe",
+                    "categories": ["Root", "Shoes"],
+                    "average_rating": 4.8,
+                    "rating_number": 300,
+                },
+            ]
+        )
+        state = SessionState("s", category_anchor="Shoes")
+        StateReducer().apply(
+            state,
+            parse_intent_update(
+                "A key requirement is: rating_count: 250 or more.\n"
+                "A key requirement is: feature: title contains: mojo.",
+                turn=1,
+            ),
+            turn=1,
+        )
+
+        result = build_structured_pool(repository, state)
+
+        self.assertEqual(result.ids, ("MATCH",))
+        self.assertEqual(len(result.applied_constraints), 2)
+
     def test_full_category_is_filtered_before_any_budget(self) -> None:
         repository = _repository()
         state = SessionState("s", category_anchor="Large Category")
@@ -781,6 +889,7 @@ class AgentIntegrationTests(unittest.TestCase):
         agent.reset("s", {})
         response = agent.respond("s", "I'm looking for Large Category.", 1, 10)
         self.assertEqual(response["ask_attribute"], "other")
+        self.assertIn("Is there anything else that matters to you?", response["message"])
         self.assertEqual(len(response["recommendations"]), 1)
 
     def test_response_can_include_ask_and_top_three_for_small_pool(self) -> None:

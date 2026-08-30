@@ -8,6 +8,7 @@ Qwen/adaptive-recall benchmarks.
 from __future__ import annotations
 
 from collections.abc import Sequence
+import inspect
 from pathlib import Path
 import time
 
@@ -15,7 +16,7 @@ from .shopping_agent.catalog import (
     CatalogRepository,
     RetrievedProduct,
 )
-from .shopping_agent.config import AgentConfig
+from .shopping_agent.config import AgentConfig, normalize_protocol_profile
 from .shopping_agent.policy import (
     CandidateGate,
     ClarificationPolicy,
@@ -52,15 +53,25 @@ from .shopping_agent.retrieval import (
     source_counts,
 )
 from .shopping_agent.semantic_ranking import LLMSemanticRanker
+from .shopping_agent.intent_interpreter import (
+    IntentInterpretation,
+    IntentInterpreter,
+    profile_intent_update,
+)
+from .shopping_agent.official_intent import parse_official_intent_update
 from .shopping_agent.state import (
     CandidateStats,
+    IntentUpdate,
     RuntimeContext,
     SessionState,
     SessionStore,
     StateReducer,
     parse_intent_update,
 )
-from .shopping_agent.structured_pool import StructuredCandidatePool
+from .shopping_agent.structured_pool import (
+    OFFICIAL_FILTERABLE_ATTRIBUTES,
+    StructuredCandidatePool,
+)
 
 
 class Agent:
@@ -70,6 +81,7 @@ class Agent:
         self,
         catalog_path: str | Path = "data/catalog.jsonl",
         *,
+        protocol_profile: str | None = None,
         config: AgentConfig | None = None,
         repository: CatalogRepository | None = None,
         model_client: object | None = None,
@@ -78,9 +90,15 @@ class Agent:
         candidate_gate: CandidateGate | None = None,
         clarification_policy: ClarificationPolicy | None = None,
         commit_policy: RecommendationCommitPolicy | None = None,
+        intent_interpreter: object | None = None,
     ) -> None:
         self.catalog_path = Path(catalog_path)
         self.config = config or AgentConfig.from_env()
+        self.protocol_profile = normalize_protocol_profile(
+            protocol_profile
+            if protocol_profile is not None
+            else self.config.protocol_profile
+        )
         self.repository = repository or CatalogRepository(self.catalog_path)
         self.catalog = self.repository
         self.connection = self.repository.connection
@@ -88,14 +106,44 @@ class Agent:
         self.sessions = self.store.sessions
         self._sessions = self.sessions
         self.reducer = StateReducer()
+        if intent_interpreter is not None:
+            self.intent_interpreter = intent_interpreter
+        elif self.protocol_profile == "official":
+            self.intent_interpreter = parse_official_intent_update
+        elif model_client is not None:
+            # Explicit model injection is an opt-in integration hook.  Share
+            # the client with semantic ranking so tests and local deployments
+            # can provide one tiered API/local fallback object.
+            self.intent_interpreter = IntentInterpreter(
+                client=model_client,
+                config=self.config,
+                catalog_repository=self.repository,
+                enabled=True,
+            )
+        else:
+            self.intent_interpreter = IntentInterpreter(
+                config=self.config,
+                catalog_repository=self.repository,
+            )
         self.router = router or IntentRouter(
             retrieval_budget=self.config.retrieval_limit
         )
         self.candidate_gate = candidate_gate or CandidateGate()
-        self.clarification_policy = clarification_policy or ClarificationPolicy()
+        self.clarification_policy = clarification_policy or ClarificationPolicy(
+            mode=(
+                "protocol_aware"
+                if self.protocol_profile == "official"
+                else "catalog_entropy"
+            )
+        )
         self.structured_pool = StructuredCandidatePool(
             self.repository,
             enabled=bool(getattr(self.config, "structured_pool_enabled", True)),
+            filterable_attributes=(
+                OFFICIAL_FILTERABLE_ATTRIBUTES
+                if self.protocol_profile == "official"
+                else None
+            ),
         )
         self.commit_policy = commit_policy or RecommendationCommitPolicy(
             commit_all_threshold=getattr(self.config, "commit_all_threshold", 5),
@@ -143,6 +191,7 @@ class Agent:
         self.response_helpers = SemanticResponseAdapter(self.config)
         self.last_diagnostics: dict[str, object] = {
             "event": "initialized",
+            "protocol_profile": self.protocol_profile,
             "catalog_size": len(self.repository),
             "model_backends": self._model_backends(),
         }
@@ -159,12 +208,32 @@ class Agent:
         """Replace any prior state for this session ID."""
 
         state = self.store.reset(session_id, user_profile)
+        # Profile tags are historical preferences, not hard requirements.  Use
+        # the same local catalog grounding as message interpretation so exact
+        # brands, rating thresholds, review counts, and title tokens become
+        # useful soft evidence from the first turn.
+        profile_update = (
+            profile_intent_update(state.profile, self.repository)
+            if self.protocol_profile == "natural_language"
+            else IntentUpdate()
+        )
+        if profile_update.mutations or profile_update.query_evidence:
+            self.reducer.apply(state, profile_update, turn=0)
         self.last_diagnostics = {
             "event": "reset",
+            "protocol_profile": self.protocol_profile,
             "session_id": state.session_id,
             "intent_epoch": state.intent_epoch,
             "catalog_size": len(self.repository),
             "model_backends": self._model_backends(),
+            "profile_intent_mutations": [
+                {
+                    "attribute": item.attribute,
+                    "value": item.value,
+                    "source": item.source,
+                }
+                for item in profile_update.mutations
+            ],
         }
 
     def respond(self, session_id: str, user_message: str, turn: int, top_k: int) -> dict:
@@ -186,6 +255,7 @@ class Agent:
             }
         self.last_diagnostics = {
             **self.last_diagnostics,
+            "protocol_profile": self.protocol_profile,
             "session_id": state.session_id,
             "turn": int(turn),
             "latency_ms": round((time.perf_counter() - started) * 1000.0, 3),
@@ -201,8 +271,16 @@ class Agent:
         limit = self._limit(top_k)
         message = str(user_message or "")
         old_epoch = state.intent_epoch
-        update = parse_intent_update(message, turn=turn)
+        interpretation = self._interpret_intent(state, message, turn)
+        update = interpretation.update
         self.reducer.apply(state, update, turn=turn)
+        # Reducer diagnostics describe the state diff; interpretation
+        # diagnostics describe the rule/model path that produced the update.
+        # Keep both on the per-session and facade-level diagnostic surfaces.
+        state.last_diagnostics = {
+            **state.last_diagnostics,
+            **interpretation.diagnostics,
+        }
         intent_diagnostics = dict(state.last_diagnostics)
         # Capture the post-reducer intent before later diagnostics or ranking
         # stages mutate derived state (for example a softened pool key).
@@ -332,6 +410,17 @@ class Agent:
             )
         else:
             commit_decision = CommitDecision("full", limit, "commit_policy_disabled")
+        # An evidence-backed model interpretation is already an explicit user
+        # answer.  In model-first mode do not spend the turn asking another
+        # generic question when a usable ranked pool exists.
+        if (
+            commit_decision.recommendation_limit == 0
+            and ranked
+            and any(bool(getattr(item, "explicit", False)) for item in state.active_constraints)
+        ):
+            commit_decision = CommitDecision(
+                "model_explicit", min(max(len(ranked), 1), limit), "explicit_model_evidence"
+            )
         recommendation_limit = min(
             limit, max(int(commit_decision.recommendation_limit), 0)
         )
@@ -345,7 +434,10 @@ class Agent:
             "ask_attribute": ask_attribute,
             "recommendations": [{"parent_asin": item} for item in ids],
         }
-        usage = self._usage(semantic)
+        usage = self._merge_usage(
+            self._usage(semantic),
+            self._intent_usage(interpretation),
+        )
         if usage is not None:
             result["usage"] = usage
         self.last_diagnostics = {
@@ -418,10 +510,64 @@ class Agent:
             "seen_in_epoch": len(state.seen_recommendations),
             "model_backend": getattr(semantic, "backend", None),
             "model_failures": self._failures(semantic),
+            "intent_path": intent_diagnostics.get("intent_path", "rules"),
+            "intent_trigger_reason": intent_diagnostics.get(
+                "intent_trigger_reason", "high_confidence_rules"
+            ),
+            "intent_accepted": intent_diagnostics.get("intent_accepted", []),
+            "intent_rejected": intent_diagnostics.get("intent_rejected", []),
+            "intent_model_backend": intent_diagnostics.get(
+                "intent_model_backend"
+            ),
+            "intent_model_failures": intent_diagnostics.get(
+                "intent_model_failures", []
+            ),
+            "intent_usage": intent_diagnostics.get("intent_usage"),
+            "intent_latency_ms": intent_diagnostics.get("intent_latency_ms", 0.0),
             "usage": usage,
             **retrieval_diagnostics,
         }
         return result
+
+    def _interpret_intent(
+        self, state: SessionState, message: str, turn: int
+    ) -> IntentInterpretation:
+        """Call the optional interpreter while retaining compatibility hooks."""
+
+        method = getattr(self.intent_interpreter, "interpret", None)
+        if not callable(method):
+            # A direct IntentUpdate injection is useful for tiny tests and is
+            # kept as a narrow compatibility path.
+            if callable(self.intent_interpreter):
+                candidate = self.intent_interpreter(message, turn=turn)
+            else:
+                candidate = parse_intent_update(message, turn=turn)
+        else:
+            try:
+                signature = inspect.signature(method)
+                parameters = signature.parameters
+            except (TypeError, ValueError):
+                parameters = {}
+            kwargs: dict[str, object] = {}
+            if not parameters or "turn" in parameters:
+                kwargs["turn"] = turn
+            if not parameters or "state" in parameters:
+                kwargs["state"] = state
+            if not parameters or "asked_attribute" in parameters:
+                kwargs["asked_attribute"] = (
+                    state.asked_attributes[-1] if state.asked_attributes else None
+                )
+            candidate = method(message, **kwargs)
+        if isinstance(candidate, IntentInterpretation):
+            return candidate
+        if isinstance(candidate, IntentUpdate):
+            return IntentInterpretation(
+                update=candidate,
+                path="rules",
+                scope=candidate.scope,
+                confidence=candidate.confidence,
+            )
+        raise TypeError("intent interpreter returned an unsupported result")
 
     # Compatibility delegates -------------------------------------------------
     # Keep these names stable for direct tests, diagnostics scripts, and the
@@ -546,6 +692,40 @@ class Agent:
     @staticmethod
     def _usage(result: object | None) -> dict[str, int] | None:
         return extract_usage(result)
+
+    @staticmethod
+    def _intent_usage(result: object | None) -> dict[str, int] | None:
+        usage = getattr(result, "usage", None) if result is not None else None
+        if not isinstance(usage, dict):
+            return None
+        prompt = usage.get("prompt_tokens")
+        completion = usage.get("completion_tokens")
+        if (
+            isinstance(prompt, int)
+            and not isinstance(prompt, bool)
+            and prompt >= 0
+            and isinstance(completion, int)
+            and not isinstance(completion, bool)
+            and completion >= 0
+        ):
+            return {
+                "prompt_tokens": int(prompt),
+                "completion_tokens": int(completion),
+            }
+        return None
+
+    @staticmethod
+    def _merge_usage(
+        first: dict[str, int] | None, second: dict[str, int] | None
+    ) -> dict[str, int] | None:
+        if first is None:
+            return dict(second) if second is not None else None
+        if second is None:
+            return dict(first)
+        return {
+            "prompt_tokens": first["prompt_tokens"] + second["prompt_tokens"],
+            "completion_tokens": first["completion_tokens"] + second["completion_tokens"],
+        }
 
     @staticmethod
     def _failures(result: object | None) -> list[object]:
