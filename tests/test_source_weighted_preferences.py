@@ -216,13 +216,23 @@ class SourceWeightedPreferenceTests(unittest.TestCase):
             Constraint(attribute="feature", value="waterproof", source="model")
         )
         state.attribute_exhausted.update(
-            {"other", "material", "color", "size", "style", "brand", "budget"}
+            {
+                "other",
+                "material",
+                "color",
+                "size",
+                "style",
+                "brand",
+                "budget",
+                "use_case",
+                "category",
+            }
         )
         context = state.runtime_context(turn=2, remaining_turns=8)
 
         self.assertIn("feature", context.unanswered_attributes)
         self.assertEqual(
-            ClarificationPolicy().choose_attribute(
+            ClarificationPolicy(mode="catalog_entropy").choose_attribute(
                 state,
                 [repository_product(state, "Waterproof feature item")],
                 turn=2,

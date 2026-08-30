@@ -16,7 +16,7 @@ from .shopping_agent.catalog import (
     CatalogRepository,
     RetrievedProduct,
 )
-from .shopping_agent.config import AgentConfig
+from .shopping_agent.config import AgentConfig, normalize_protocol_profile
 from .shopping_agent.policy import (
     CandidateGate,
     ClarificationPolicy,
@@ -58,6 +58,7 @@ from .shopping_agent.intent_interpreter import (
     IntentInterpreter,
     profile_intent_update,
 )
+from .shopping_agent.official_intent import parse_official_intent_update
 from .shopping_agent.state import (
     CandidateStats,
     IntentUpdate,
@@ -67,7 +68,10 @@ from .shopping_agent.state import (
     StateReducer,
     parse_intent_update,
 )
-from .shopping_agent.structured_pool import StructuredCandidatePool
+from .shopping_agent.structured_pool import (
+    OFFICIAL_FILTERABLE_ATTRIBUTES,
+    StructuredCandidatePool,
+)
 
 
 class Agent:
@@ -77,6 +81,7 @@ class Agent:
         self,
         catalog_path: str | Path = "data/catalog.jsonl",
         *,
+        protocol_profile: str | None = None,
         config: AgentConfig | None = None,
         repository: CatalogRepository | None = None,
         model_client: object | None = None,
@@ -89,6 +94,11 @@ class Agent:
     ) -> None:
         self.catalog_path = Path(catalog_path)
         self.config = config or AgentConfig.from_env()
+        self.protocol_profile = normalize_protocol_profile(
+            protocol_profile
+            if protocol_profile is not None
+            else self.config.protocol_profile
+        )
         self.repository = repository or CatalogRepository(self.catalog_path)
         self.catalog = self.repository
         self.connection = self.repository.connection
@@ -98,6 +108,8 @@ class Agent:
         self.reducer = StateReducer()
         if intent_interpreter is not None:
             self.intent_interpreter = intent_interpreter
+        elif self.protocol_profile == "official":
+            self.intent_interpreter = parse_official_intent_update
         elif model_client is not None:
             # Explicit model injection is an opt-in integration hook.  Share
             # the client with semantic ranking so tests and local deployments
@@ -117,10 +129,21 @@ class Agent:
             retrieval_budget=self.config.retrieval_limit
         )
         self.candidate_gate = candidate_gate or CandidateGate()
-        self.clarification_policy = clarification_policy or ClarificationPolicy()
+        self.clarification_policy = clarification_policy or ClarificationPolicy(
+            mode=(
+                "protocol_aware"
+                if self.protocol_profile == "official"
+                else "catalog_entropy"
+            )
+        )
         self.structured_pool = StructuredCandidatePool(
             self.repository,
             enabled=bool(getattr(self.config, "structured_pool_enabled", True)),
+            filterable_attributes=(
+                OFFICIAL_FILTERABLE_ATTRIBUTES
+                if self.protocol_profile == "official"
+                else None
+            ),
         )
         self.commit_policy = commit_policy or RecommendationCommitPolicy(
             commit_all_threshold=getattr(self.config, "commit_all_threshold", 5),
@@ -168,6 +191,7 @@ class Agent:
         self.response_helpers = SemanticResponseAdapter(self.config)
         self.last_diagnostics: dict[str, object] = {
             "event": "initialized",
+            "protocol_profile": self.protocol_profile,
             "catalog_size": len(self.repository),
             "model_backends": self._model_backends(),
         }
@@ -188,11 +212,16 @@ class Agent:
         # the same local catalog grounding as message interpretation so exact
         # brands, rating thresholds, review counts, and title tokens become
         # useful soft evidence from the first turn.
-        profile_update = profile_intent_update(state.profile, self.repository)
+        profile_update = (
+            profile_intent_update(state.profile, self.repository)
+            if self.protocol_profile == "natural_language"
+            else IntentUpdate()
+        )
         if profile_update.mutations or profile_update.query_evidence:
             self.reducer.apply(state, profile_update, turn=0)
         self.last_diagnostics = {
             "event": "reset",
+            "protocol_profile": self.protocol_profile,
             "session_id": state.session_id,
             "intent_epoch": state.intent_epoch,
             "catalog_size": len(self.repository),
@@ -226,6 +255,7 @@ class Agent:
             }
         self.last_diagnostics = {
             **self.last_diagnostics,
+            "protocol_profile": self.protocol_profile,
             "session_id": state.session_id,
             "turn": int(turn),
             "latency_ms": round((time.perf_counter() - started) * 1000.0, 3),

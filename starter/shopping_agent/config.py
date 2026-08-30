@@ -14,6 +14,22 @@ import os
 from pathlib import Path
 
 
+DEFAULT_PROTOCOL_PROFILE = "official"
+PROTOCOL_PROFILES = frozenset({DEFAULT_PROTOCOL_PROFILE, "natural_language"})
+
+
+def normalize_protocol_profile(value: object, *, strict: bool = True) -> str:
+    """Return a supported explicit evaluator protocol profile."""
+
+    profile = str(value or DEFAULT_PROTOCOL_PROFILE).strip().lower()
+    if profile in PROTOCOL_PROFILES:
+        return profile
+    if strict:
+        allowed = ", ".join(sorted(PROTOCOL_PROFILES))
+        raise ValueError(f"protocol_profile must be one of: {allowed}")
+    return DEFAULT_PROTOCOL_PROFILE
+
+
 def _optional_text(value: object) -> str | None:
     """Return a stripped non-empty environment value, or ``None``."""
 
@@ -88,6 +104,8 @@ class AgentConfig:
     process environment.  No default key, network client, or model process is
     created by this class.
     """
+
+    protocol_profile: str = DEFAULT_PROTOCOL_PROFILE
 
     # DeepSeek is enabled only when ``deepseek_api_key`` is non-empty.
     deepseek_api_key: str | None = None
@@ -170,6 +188,13 @@ class AgentConfig:
     ranking_rating_weight: float = 0.05
     ranking_profile_weight: float = 0.08
 
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "protocol_profile",
+            normalize_protocol_profile(self.protocol_profile),
+        )
+
     @classmethod
     def from_env(cls) -> "AgentConfig":
         """Build a configuration from explicitly named environment values.
@@ -182,6 +207,9 @@ class AgentConfig:
 
         env = os.environ
         return cls(
+            protocol_profile=normalize_protocol_profile(
+                env.get("SHOPPING_AGENT_PROTOCOL_PROFILE"), strict=False
+            ),
             deepseek_api_key=_optional_text(
                 env.get("SHOPPING_AGENT_DEEPSEEK_API_KEY")
             ),

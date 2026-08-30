@@ -26,6 +26,9 @@ from .state import (
 FILTERABLE_ATTRIBUTES = frozenset(
     {"brand", "material", "color", "size", "style", "budget", "feature"}
 )
+OFFICIAL_FILTERABLE_ATTRIBUTES = frozenset(
+    {"material", "color", "budget", "feature"}
+)
 _NUMBER_RE = re.compile(r"(?<!\w)\$?\s*(\d+(?:[,.]\d+)?)", re.I)
 _WORD_RE = re.compile(r"[^\W_]+", re.UNICODE)
 
@@ -170,9 +173,20 @@ def _constraint_key(constraint: Constraint) -> tuple[str, str]:
 class StructuredCandidatePool:
     """Build a full category pool and apply safe high-confidence filters."""
 
-    def __init__(self, repository: CatalogRepository, *, enabled: bool = True) -> None:
+    def __init__(
+        self,
+        repository: CatalogRepository,
+        *,
+        enabled: bool = True,
+        filterable_attributes: frozenset[str] | None = None,
+    ) -> None:
         self.repository = repository
         self.enabled = bool(enabled)
+        self.filterable_attributes = (
+            FILTERABLE_ATTRIBUTES
+            if filterable_attributes is None
+            else frozenset(filterable_attributes)
+        )
 
     def build(
         self,
@@ -202,7 +216,7 @@ class StructuredCandidatePool:
 
         for constraint in state.active_constraints:
             attribute = str(constraint.attribute).lower()
-            if attribute not in FILTERABLE_ATTRIBUTES:
+            if attribute not in self.filterable_attributes:
                 continue
             key = _constraint_key(constraint)
             if key in getattr(state, "softened_constraint_keys", set()):
@@ -290,6 +304,7 @@ def build_structured_pool(
 
 __all__ = [
     "FILTERABLE_ATTRIBUTES",
+    "OFFICIAL_FILTERABLE_ATTRIBUTES",
     "ConstraintApplication",
     "StructuredCandidatePool",
     "StructuredPoolResult",

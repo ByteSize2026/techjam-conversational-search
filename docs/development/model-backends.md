@@ -3,6 +3,19 @@
 Agent 默认使用确定性召回与排序。模型可选地用于自然语言意图解释和有界候选集语义重排；
 没有配置、请求失败、JSON 无效或输出 ID 不合法时，系统继续使用确定性路径。
 
+## 选择协议 Profile
+
+`official` 是零参数默认值，使用冻结的官方协议 adapter；`natural_language` 使用自然语言意图
+适配。两者共享召回、排序和推荐提交策略：
+
+```bash
+python3 -m evaluator.local_evaluator --protocol-profile official
+```
+
+也可设置 `SHOPPING_AGENT_PROTOCOL_PROFILE=official|natural_language`，或在 Python 中传入
+`Agent(protocol_profile=...)`。profile 本身不会启用模型或网络；下文的模型开关仍需
+单独显式配置。
+
 ## 使用本地 `.env`
 
 仓库提供不含任何密钥的 [`.env.example`](../../.env.example)。本机已创建并忽略 `.env`；

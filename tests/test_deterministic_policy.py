@@ -123,7 +123,7 @@ class ExhaustionStateTests(unittest.TestCase):
     def test_other_is_asked_once_then_policy_chooses_highest_information_slot(self) -> None:
         from starter.shopping_agent.policy import ClarificationPolicy
 
-        policy = ClarificationPolicy()
+        policy = ClarificationPolicy(mode="catalog_entropy")
         state = SessionState("s")
         self.assertEqual(policy.choose_attribute(state, turn=1, remaining_turns=9), "other")
         state.record_asked("other")

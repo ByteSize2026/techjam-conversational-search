@@ -35,6 +35,11 @@
 
 只要变更涉及 `MAX_TURNS`、`TOP_K`、`ALLOWED_ATTRIBUTES`、`normalize_recommendations`、`customer_reply`、`metric_summary` 或 `evaluate`，就同时核查 API 合同、配置、测试和竞赛规则。普通 Agent 改动不应改变这些符号；影响分析见 [跨层影响](../guides/change-impact.md)。
 
+本地 CLI 可以增加显式运行配置并在构造 `Agent` 时原样透传，例如
+`--protocol-profile official`。这类适配必须局限在参数解析与依赖构造边界，不能改变上述
+对话循环、过滤、指标或评分函数。竞赛提交仍以官方规则为准，不应把本地 evaluator 改动
+当作 Agent 提交内容。
+
 ## Scenario: manifest 子集结果比较
 
 ### 1. Scope / Trigger

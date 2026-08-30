@@ -40,6 +40,7 @@ python3 -m unittest discover -s tests -v
 
 ```bash
 python3 -m evaluator.local_evaluator \
+  --protocol-profile official \
   --catalog data/catalog.jsonl \
   --dataset data/public_set.jsonl \
   --output results.json
@@ -47,6 +48,46 @@ python3 -m evaluator.local_evaluator \
 
 `results.json` 是本地产物，已被 Git 忽略。指标定义和结果解释见
 [本地开发与评测](docs/development/local-evaluation.md)。
+
+## 协议 Profile
+
+同一个 `Agent` 支持两个显式协议 profile；它不会根据消息内容或数据分布猜测当前
+evaluator：
+
+| Profile | 输入与澄清适配 | 共享部分 |
+| --- | --- | --- |
+| `official` | 冻结的官方消息 adapter、稳定顺序 `protocol_aware` 澄清与官方结构化过滤字段；零参数默认值 | 状态 reducer、候选池实现、召回、排序、推荐提交、响应守卫 |
+| `natural_language` | `IntentInterpreter`、catalog profile grounding、扩展结构化过滤与基于候选信息量的澄清 | 状态 reducer、候选池实现、召回、排序、推荐提交、响应守卫 |
+
+Python 调用可直接传参：
+
+```python
+from starter.agent import Agent
+
+official_agent = Agent(protocol_profile="official")
+natural_language_agent = Agent(protocol_profile="natural_language")
+```
+
+官方本地 evaluator 使用一条命令启动：
+
+```bash
+python3 -m evaluator.local_evaluator --protocol-profile official
+```
+
+独立的自然语言 benchmark 在其仓库中使用同名参数：
+
+```bash
+python3 -m nl_benchmark evaluate \
+  --protocol-profile natural_language \
+  --agent-repo /path/to/techjam-conversational-search-main \
+  --catalog /path/to/techjam-conversational-search-main/data/catalog.jsonl \
+  --dataset /path/to/dataset.jsonl \
+  --output /path/to/results.json
+```
+
+也可通过 `AgentConfig` 或 `SHOPPING_AGENT_PROTOCOL_PROFILE` 配置 profile。profile 只选择
+协议输入和策略配置，不会隐式开启网络模型；DeepSeek、本地模型和 Qwen 仍需各自显式
+配置。官方 adapter 保留公开集已验证的旧协议语义，避免自然语言 parser 演进改变官方成绩。
 
 ## 核心接口
 
@@ -85,15 +126,25 @@ class Agent:
 
 ## 仓库结构
 
-```text
-starter/                 正式 Agent 入口与购物搜索组件
-evaluator/               公开集模拟与评分
-tests/                   unittest 回归
-tests/benchmarks/        离线诊断与模型 benchmark
-data/                    公开开发集与本地 catalog
-docs/                    架构、开发指南与公开合同
-notebooks/               可选实验 notebook
-```
+`starter/` 是主要源码目录，其他目录用于评测、验证、实验或项目管理：
+
+| 目录 | 职责 | 正式运行时 |
+| --- | --- | --- |
+| `starter/` | 唯一 Agent 入口、会话状态、意图解释、召回、排序和响应组件 | 是 |
+| `evaluator/` | 官方公开集的本地模拟、响应过滤和评分 CLI | 否，外部调用 Agent |
+| `tests/` | 标准库 `unittest` 合同与回归测试 | 否 |
+| `tests/benchmarks/` | adaptive recall、Qwen 等离线诊断工具 | 否 |
+| `data/` | 公开开发集及本地冻结 catalog；大文件和结果不提交 | 数据输入 |
+| `docs/` | 架构、接口合同、开发指南和比赛规则 | 否 |
+| `notebooks/` | 可选模型实验 notebook | 否 |
+| `holdout/` | 本地留出集和历史实验结果，不属于正式提交 | 否 |
+| `report/` | 本地报告预留目录；当前没有受 Git 跟踪的正式实现 | 否 |
+| `scripts/` | 本地或历史脚本预留目录；当前没有受 Git 跟踪的可执行源码 | 否 |
+| `.trellis/` | 任务、规范、工作流和开发记录 | 否 |
+| `.claude/`、`.cursor/` | Trellis 在不同开发工具中的命令、skill 和 hook | 否 |
+
+协议 profile 解决的是运行时兼容，不等同于 Git 分支合并。本任务不会自动 merge、rebase
+或 cherry-pick `main`；验证后的代码是否推进到其他分支应作为单独发布决策。
 
 公开集和商品目录派生自 Amazon Reviews 2023。使用或再分发前请阅读
 [`DATA_ATTRIBUTION.md`](DATA_ATTRIBUTION.md)。
