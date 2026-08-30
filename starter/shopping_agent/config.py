@@ -108,6 +108,16 @@ class AgentConfig:
     model_max_tokens: int = 512
     temperature: float = 0.0
 
+    # Optional rule-first intent interpretation.  It is disabled by default
+    # so an existing deterministic deployment remains exactly offline until
+    # the operator explicitly opts in.  Supplying a model client directly to
+    # ``Agent``/``IntentInterpreter`` is an explicit integration opt-in.
+    intent_model_enabled: bool = False
+    intent_model_mode: str = "rules_first"
+    intent_model_trigger_threshold: float = 0.72
+    intent_model_accept_threshold: float = 0.65
+    intent_model_recent_turns: int = 4
+
     # Optional local Qwen3-Reranker.  A path is intentionally the opt-in
     # switch: model IDs are not accepted as a default because the evaluator
     # may run offline and must never download a checkpoint implicitly.
@@ -209,6 +219,29 @@ class AgentConfig:
             )
             if env.get("SHOPPING_AGENT_MODEL_TEMPERATURE") is not None
             else 0.0,
+            intent_model_enabled=_boolean(
+                env.get("SHOPPING_AGENT_INTENT_MODEL_ENABLED")
+                or env.get("SHOPPING_AGENT_INTENT_INTERPRETER_ENABLED"),
+                False,
+            ),
+            intent_model_mode=(
+                _optional_text(env.get("SHOPPING_AGENT_INTENT_MODEL_MODE"))
+                or "rules_first"
+            ).lower(),
+            intent_model_trigger_threshold=_bounded_unit_float(
+                env.get("SHOPPING_AGENT_INTENT_MODEL_TRIGGER_THRESHOLD")
+                or env.get("SHOPPING_AGENT_INTENT_TRIGGER_THRESHOLD"),
+                0.72,
+            ),
+            intent_model_accept_threshold=_bounded_unit_float(
+                env.get("SHOPPING_AGENT_INTENT_MODEL_ACCEPT_THRESHOLD")
+                or env.get("SHOPPING_AGENT_INTENT_ACCEPT_THRESHOLD"),
+                0.65,
+            ),
+            intent_model_recent_turns=_positive_int(
+                env.get("SHOPPING_AGENT_INTENT_MODEL_RECENT_TURNS"),
+                4,
+            ),
             qwen_reranker_model_path=_optional_text(
                 env.get("SHOPPING_AGENT_QWEN_RERANKER_MODEL_PATH")
                 or env.get("SHOPPING_AGENT_QWEN_RERANKER_PATH")
@@ -352,6 +385,12 @@ class AgentConfig:
         """Whether the local endpoint has the two required settings."""
 
         return bool(self.local_base_url and self.local_model)
+
+    @property
+    def intent_interpreter_enabled(self) -> bool:
+        """Compatibility alias for the optional intent model switch."""
+
+        return self.intent_model_enabled
 
     @property
     def qwen_reranker_model_path_resolved(self) -> str | None:

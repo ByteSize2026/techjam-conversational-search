@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/agent/contract-and-state.md", "reason": "Verify production interface and session behavior remain unchanged"}
+{"file": ".trellis/spec/testing/unittest-fixtures.md", "reason": "Verify deterministic temporary fixtures and no network dependency"}
+{"file": ".trellis/spec/data-contracts/jsonl-privacy-submission.md", "reason": "Audit JSONL, secrets, hidden fields, and external artifacts"}
+{"file": ".trellis/tasks/08-29-ecomagentbench-evaluation/research/ecomagentbench-compatibility.md", "reason": "Check claims against source-measured facts"}

@@ -19,6 +19,12 @@ from .state import SessionState
 
 ABSOLUTE_CAP = 600
 NON_CATEGORY_TAIL = 100
+# Browsing preference evidence is split by producer.  Explicit/rule-derived
+# preferences are the primary signal; model-only preferences are deliberately
+# a smaller recall expansion so a mistaken semantic guess cannot dominate the
+# user's stated intent.
+PREFERENCE_QUERY_WEIGHT = 0.75
+MODEL_PREFERENCE_QUERY_WEIGHT = 0.30
 
 
 def diversify_candidates(
@@ -241,14 +247,34 @@ class RetrievalEngine:
                         1.00,
                     )
                 )
-            if state.active_preferences:
+            non_model_preferences = [
+                item
+                for item in state.active_preferences
+                if str(getattr(item, "source", "rule") or "rule").lower() != "model"
+            ]
+            model_preferences = [
+                item
+                for item in state.active_preferences
+                if str(getattr(item, "source", "rule") or "rule").lower() == "model"
+            ]
+            if non_model_preferences:
                 specs.append(
                     (
-                        " ".join(item.value for item in state.active_preferences),
+                        " ".join(item.value for item in non_model_preferences),
                         "preferences",
                         "browsing",
                         browsing_weight,
-                        0.75,
+                        PREFERENCE_QUERY_WEIGHT,
+                    )
+                )
+            if model_preferences:
+                specs.append(
+                    (
+                        " ".join(item.value for item in model_preferences),
+                        "model_preferences",
+                        "browsing",
+                        browsing_weight,
+                        MODEL_PREFERENCE_QUERY_WEIGHT,
                     )
                 )
             tags = state.profile.get("preference_tags", ())
@@ -460,13 +486,19 @@ class RetrievalEngine:
             "cheap_candidate_pool_absolute_cap": ABSOLUTE_CAP,
             "non_category_tail_limit": non_category_tail,
             "non_category_tail_count": max(len(output) - len(category_order), 0),
+            "browsing_preference_query_weights": {
+                "non_model": PREFERENCE_QUERY_WEIGHT,
+                "model": MODEL_PREFERENCE_QUERY_WEIGHT,
+            },
         }
         return output
 
 
 __all__ = [
     "ABSOLUTE_CAP",
+    "MODEL_PREFERENCE_QUERY_WEIGHT",
     "NON_CATEGORY_TAIL",
+    "PREFERENCE_QUERY_WEIGHT",
     "RetrievalEngine",
     "diversify_candidates",
     "source_counts",

@@ -20,7 +20,35 @@ from .state import (
     RuntimeContext,
     SessionState,
     normalize_constraint_value,
+    rating_count_lower_bound,
+    rating_lower_bound,
 )
+
+
+# Keep the ordinary soft-preference boost as the compatibility baseline.  A
+# model suggestion is useful ranking evidence, but it is not equivalent to a
+# preference the customer explicitly stated (or that the deterministic
+# parser extracted).  The multiplier is deliberately small and explicit so
+# the distinction remains visible in diagnostics/tests: 1.6 * 0.4 = 0.64.
+SOFT_PREFERENCE_BOOST = 1.6
+MODEL_SOFT_PREFERENCE_MULTIPLIER = 0.4
+
+
+def soft_preference_multiplier(constraint: object) -> float:
+    """Return the ranking multiplier for a soft constraint's producer.
+
+    ``profile`` is not normally represented as a ``Constraint`` (it has its
+    own low-weight path below), but treating every non-model source as the
+    ordinary multiplier keeps this helper safe for compatibility callers.
+    Only a model-produced *soft* preference is down-weighted; hard
+    constraints continue to use their separate hard evidence boost.
+    """
+
+    source = str(getattr(constraint, "source", "rule") or "rule").lower()
+    hardness = str(getattr(constraint, "hardness", "soft") or "soft").lower()
+    if source == "model" and hardness == "soft":
+        return MODEL_SOFT_PREFERENCE_MULTIPLIER
+    return 1.0
 
 
 def entropy(values: Sequence[str]) -> float:
@@ -365,14 +393,61 @@ class RankingEngine:
                     term in text for term in safe_terms(context.category_anchor)
                 )
             for constraint in state.active_constraints:
-                terms = safe_terms(
-                    normalize_constraint_value(constraint.attribute, constraint.value)
+                rating_floor = (
+                    rating_lower_bound(constraint.value)
+                    if str(constraint.attribute).lower() == "feature"
+                    else None
                 )
-                if not terms:
-                    continue
-                ratio = sum(term in text for term in terms) / len(terms)
+                if rating_floor is not None:
+                    ratio = float(
+                        product.rating is not None
+                        and float(product.rating) >= rating_floor
+                    )
+                elif (
+                    str(constraint.attribute).lower() == "feature"
+                    and rating_count_lower_bound(constraint.value) is not None
+                ):
+                    count_floor = rating_count_lower_bound(constraint.value)
+                    ratio = float(
+                        product.rating_count is not None
+                        and int(product.rating_count) >= int(count_floor or 0)
+                    )
+                elif (
+                    str(constraint.attribute).lower() == "feature"
+                    and re.match(
+                        r"^title\s+contains\s*:\s*(?P<token>.+)$",
+                        normalize_constraint_value(constraint.attribute, constraint.value),
+                        re.I,
+                    )
+                ):
+                    title_match = re.match(
+                        r"^title\s+contains\s*:\s*(?P<token>.+)$",
+                        normalize_constraint_value(constraint.attribute, constraint.value),
+                        re.I,
+                    )
+                    token = title_match.group("token") if title_match else ""
+                    title_text = product.title.lower()
+                    ratio = float(
+                        bool(token)
+                        and re.search(
+                            rf"(?<!\w){re.escape(token.lower())}(?!\w)",
+                            title_text,
+                        )
+                        is not None
+                    )
+                else:
+                    terms = safe_terms(
+                        normalize_constraint_value(constraint.attribute, constraint.value)
+                    )
+                    if not terms:
+                        continue
+                    ratio = sum(term in text for term in terms) / len(terms)
+                source_multiplier = soft_preference_multiplier(constraint)
                 if constraint.polarity == "avoid":
-                    score -= 3.0 * ratio
+                    # A model avoid is still soft evidence.  Keep its effect
+                    # weaker than an explicit user/rule exclusion while
+                    # retaining the deterministic avoid direction.
+                    score -= 3.0 * source_multiplier * ratio
                 elif constraint.hardness == "hard" and (
                     str(constraint.attribute).lower(),
                     normalize_constraint_value(
@@ -381,7 +456,7 @@ class RankingEngine:
                 ) not in state.softened_constraint_keys:
                     score += 5.0 * ratio
                 else:
-                    score += 1.6 * ratio
+                    score += SOFT_PREFERENCE_BOOST * source_multiplier * ratio
             tags = state.profile.get("preference_tags", ())
             if isinstance(tags, str):
                 tags = (tags,)
@@ -480,10 +555,13 @@ def _default_diversify(
 
 
 __all__ = [
+    "MODEL_SOFT_PREFERENCE_MULTIPLIER",
     "RankingEngine",
+    "SOFT_PREFERENCE_BOOST",
     "attribute_values",
     "candidate_stats",
     "entropy",
     "lexical_rank_scores",
     "rank_evidence",
+    "soft_preference_multiplier",
 ]

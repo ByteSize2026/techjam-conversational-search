@@ -9,6 +9,76 @@
 `starter.agent.Agent` 是唯一正式入口。评估器、测试和 benchmark 不应切换到另一套比赛
 特供 Agent。
 
+## 项目板块地图
+
+```mermaid
+flowchart LR
+    subgraph DATA["① 数据与配置"]
+        data_files["data/<br/>catalog.jsonl · public_set.jsonl"]
+        catalog["catalog.py<br/>目录装载与索引"]
+        config["config.py<br/>离线安全配置"]
+    end
+
+    subgraph DIALOGUE["② 对话理解"]
+        intent["intent.py<br/>意图识别"]
+        state["state.py<br/>会话状态与约束"]
+        policy["policy.py<br/>路由与提交策略"]
+    end
+
+    subgraph RETRIEVAL["③ 候选生成"]
+        retrieval["retrieval.py<br/>多路线召回"]
+        pool["structured_pool.py<br/>结构化候选池"]
+    end
+
+    subgraph RANKING["④ 排序与模型"]
+        ranking["ranking.py<br/>确定性特征排序"]
+        model["model.py<br/>可选模型后端"]
+        semantic["semantic_ranking.py<br/>可选 LLM 重排"]
+        qwen["qwen_reranker.py<br/>可选 Qwen 重排"]
+    end
+
+    subgraph BOUNDARY["⑤ 入口、输出与评测"]
+        agent["starter/agent.py<br/>唯一官方入口与总编排"]
+        response["response.py<br/>响应守卫与合同校验"]
+        evaluator["evaluator/local_evaluator.py<br/>Top-10 过滤与指标计算"]
+    end
+
+    data_files --> catalog
+    catalog --> agent
+    config --> agent
+    evaluator --> agent
+    agent --> intent
+    intent --> state
+    state --> policy
+    policy --> retrieval
+    policy --> pool
+    retrieval --> ranking
+    pool --> ranking
+    ranking --> response
+    ranking -. 可选增强 .-> semantic
+    model -. 提供后端 .-> semantic
+    ranking -. 可选增强 .-> qwen
+    semantic -. 合法结果或回退 .-> response
+    qwen -. 合法结果或回退 .-> response
+    response --> evaluator
+
+    subgraph SUPPORT["开发支撑（不进入线上运行链路）"]
+        tests["tests/<br/>单元测试与 benchmark"]
+        notebooks["notebooks/<br/>模型实验"]
+        docs["docs/ · README.md<br/>团队文档与公开规则"]
+        trellis[".trellis/<br/>任务与开发知识"]
+    end
+
+    tests -. 验证 .-> agent
+    tests -. 验证 .-> evaluator
+    notebooks -. 实验结论 .-> qwen
+    docs -. 说明 .-> agent
+    trellis -. 管理开发 .-> tests
+```
+
+图中的实线表示正式单轮运行链路，虚线表示可选增强或开发支撑关系。`.trellis/` 只管理任务、
+规范和开发知识，不属于 Agent 的运行时依赖。
+
 ## 每轮数据流
 
 ```text
@@ -38,12 +108,18 @@ Hit@10 / MRR / MTTC / scenario metrics
 模型重排是可选阶段。没有模型配置、模型失败、输出 JSON 无效或候选 ID 不合规时，系统保留
 原确定性候选顺序并继续返回合同有效的响应。
 
+追问采用“先宽后窄”的有界策略：当前意图第一次信息不足时可以询问一次 `other`，让官方
+模拟器或真实用户一次补充任意重要条件；后续不再机械重复 `other`，而是根据当前候选中各属性
+的熵和元数据覆盖率，确定性地选择最能区分候选的具体字段。已确认、已拒绝或已问过的字段不会
+重复询问。只有官方协议明确发出 boundary 重开事件时，才允许事件级额外询问一次 `other`；
+所有可用字段耗尽后停止追问并提交当前推荐。
+
 ## 模块职责
 
 | 位置 | 职责 |
 | --- | --- |
 | `starter/agent.py` | 依赖组装、会话生命周期、整轮编排、诊断和最终响应守卫 |
-| `starter/shopping_agent/catalog.py` | catalog 读取、商品记录、SQLite FTS、类目索引与有效 ID 集合 |
+| `starter/shopping_agent/catalog.py` | catalog 读取、商品记录、SQLite FTS、类目索引、字段值索引与有效 ID 集合 |
 | `starter/shopping_agent/config.py` | 从显式环境变量构造离线安全配置，不执行 I/O |
 | `starter/shopping_agent/state.py` | 会话状态、意图证据、约束更新、Intent Override 与 epoch 隔离 |
 | `starter/shopping_agent/policy.py` | 意图路由、候选 gate、澄清策略和推荐提交策略 |

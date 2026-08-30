@@ -1,0 +1,5 @@
+{"file":".trellis/spec/agent/contract-and-state.md","reason":"Review API, session, provenance, override, clarification and model fallback invariants."}
+{"file":".trellis/spec/testing/index.md","reason":"Review full unittest and boundary scenario coverage."}
+{"file":".trellis/spec/guides/offline-reproducibility.md","reason":"Verify offline fallback remains a hard release gate."}
+{"file":".trellis/spec/guides/change-impact.md","reason":"Verify all affected layers and scenarios are checked."}
+{"file":".trellis/tasks/08-29-deepseek-first-intent/research/diagnostic-findings.md","reason":"Compare implementation behavior against measured rejection and commit failures."}

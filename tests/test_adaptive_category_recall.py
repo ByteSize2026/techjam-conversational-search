@@ -215,6 +215,12 @@ class AdaptiveCategoryRecallTests(unittest.TestCase):
     def test_small_category_is_complete_and_large_category_uses_specificity_ratios(self) -> None:
         small = _records("Small Category", 3, parent_prefix="S")
         large = _records("Large Category", 501, parent_prefix="L")
+        # The production parser admits structured values only when the local
+        # catalog contains them.  Ground this fixture's later hard constraints
+        # so the test measures category-budget specificity, not value rejection.
+        for record in large:
+            record["features"] = ["durable", "waterproof"]
+            record["details"] = {"Color": "Black"}
         repository = _agent_records(small, large)
 
         agent = Agent(repository=repository, config=AgentConfig())

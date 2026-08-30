@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/08-27-flexible-intent-adapter/research/natural-language-intent-scope.md", "reason": "核对实现是否保持已收敛范围和安全降级"}
+{"file": ".trellis/spec/agent/index.md", "reason": "检查 Agent contract、状态隔离与输出边界"}
+{"file": ".trellis/spec/data-contracts/index.md", "reason": "检查目录、隐私和提交合规"}
+{"file": ".trellis/spec/evaluator/index.md", "reason": "检查场景指标和 evaluator 非修改边界"}
+{"file": ".trellis/spec/testing/index.md", "reason": "检查回归测试和 fixture 质量"}

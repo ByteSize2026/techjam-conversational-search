@@ -330,6 +330,92 @@ def normalize_category(value: object) -> str:
     return " ".join(dict.fromkeys(token for token in tokens if token))
 
 
+def normalize_attribute_value(value: object) -> str:
+    """Normalize a catalog value for exact, field-scoped validation.
+
+    This intentionally shares the catalog's tokenization rules with category
+    resolution, but does not apply substring matching.  A value is admitted
+    to a structured slot only when its normalized form is present in that
+    slot's catalog-derived index.
+    """
+
+    return normalize_category(value)
+
+
+_DETAIL_ATTRIBUTE_ALIASES: dict[str, str] = {
+    "brand": "brand",
+    "label": "brand",
+    "maker": "brand",
+    "manufacturer": "brand",
+    "color": "color",
+    "colour": "color",
+    "shade": "color",
+    "material": "material",
+    "fabric": "material",
+    "composition": "material",
+    "size": "size",
+    "sizing": "size",
+    "fit": "size",
+    "style": "style",
+    "pattern": "style",
+    "design": "style",
+    "closure": "style",
+}
+
+_COMMON_TITLE_ATTRIBUTE_VALUES: dict[str, frozenset[str]] = {
+    "color": frozenset(
+        {
+            "black",
+            "white",
+            "blue",
+            "red",
+            "pink",
+            "green",
+            "brown",
+            "gray",
+            "grey",
+            "purple",
+            "yellow",
+            "orange",
+            "navy",
+            "beige",
+        }
+    ),
+    "material": frozenset(
+        {
+            "cotton",
+            "polyester",
+            "nylon",
+            "leather",
+            "wool",
+            "spandex",
+            "silk",
+            "rayon",
+            "fabric",
+            "linen",
+            "denim",
+            "cashmere",
+        }
+    ),
+}
+
+
+def _detail_attribute(key: object) -> str | None:
+    normalized = normalize_attribute_value(key)
+    if not normalized:
+        return None
+    if normalized in _DETAIL_ATTRIBUTE_ALIASES:
+        return _DETAIL_ATTRIBUTE_ALIASES[normalized]
+    # Multi-word detail labels are common in Amazon exports.  Only map a
+    # label when the semantic word is unambiguous; arbitrary detail keys stay
+    # out of the strict state-machine slots and remain searchable text.
+    tokens = set(normalized.split())
+    for token, attribute in _DETAIL_ATTRIBUTE_ALIASES.items():
+        if token in tokens:
+            return attribute
+    return None
+
+
 def _constraint_value(constraint: object) -> tuple[str, str]:
     """Read a hard-constraint-like object without importing session state."""
 
@@ -403,12 +489,14 @@ class CatalogRepository:
         self._category_groups: tuple[_CategoryGroup, ...] = ()
         self._category_label_index: dict[str, tuple[str, ...]] = {}
         self._category_counts: dict[str, int] = {}
+        self._attribute_value_index: dict[str, dict[str, tuple[str, ...]]] = {}
         self._build_schema()
         if records is not None:
             self._load_records(records)
         elif self.catalog_path is not None and self.catalog_path.exists():
             self._load_jsonl(self.catalog_path)
         self._build_category_index()
+        self._build_attribute_value_index()
         self.connection.commit()
 
     def _build_schema(self) -> None:
@@ -561,6 +649,79 @@ class CatalogRepository:
             label: len(values) for label, values in self._category_label_index.items()
         }
 
+    def _build_attribute_value_index(self) -> None:
+        """Build field-scoped value -> product indexes from loaded records.
+
+        FTS remains the broad lexical index.  This second index is deliberately
+        narrower: it is a catalog-grounded admission check for values that
+        are about to become structured state.  Title tokens are kept in their
+        own slot so a token such as ``mojo`` cannot silently become a generic
+        ``feature`` constraint.
+        """
+
+        buckets: dict[str, defaultdict[str, set[str]]] = defaultdict(
+            lambda: defaultdict(set)
+        )
+
+        def add(attribute: str, value: object, parent_asin: str) -> None:
+            normalized = normalize_attribute_value(value)
+            add_normalized(attribute, normalized, parent_asin)
+
+        def add_normalized(
+            attribute: str, normalized: str, parent_asin: str
+        ) -> None:
+            if normalized:
+                buckets[attribute][normalized].add(parent_asin)
+
+        for record in self.products.values():
+            for category in record.categories:
+                add("category", category, record.parent_asin)
+            if record.store:
+                add("brand", record.store, record.parent_asin)
+            for key, value in record.details.items():
+                attribute = _detail_attribute(key)
+                if attribute is not None:
+                    add(attribute, value, record.parent_asin)
+                else:
+                    # Short, human-facing detail values (for example
+                    # ``Special Feature: Adjustable``) are valid feature
+                    # evidence even when the export uses an unfamiliar key.
+                    # Keep long metadata sentences and identifiers lexical-only
+                    # so catalog admission remains bounded and field-scoped.
+                    detail_tokens = normalized = normalize_attribute_value(value)
+                    if detail_tokens and len(detail_tokens.split()) <= 4 and len(detail_tokens) <= 80:
+                        add_normalized("feature", detail_tokens, record.parent_asin)
+                        for token in detail_tokens.split():
+                            if len(token) >= 2 and token not in STOPWORDS:
+                                add_normalized("feature", token, record.parent_asin)
+            for feature in record.features:
+                normalized_feature = normalize_attribute_value(feature)
+                feature_tokens = normalized_feature.split()
+                # Concise catalog feature phrases are valid slot values.  Long
+                # marketing sentences remain searchable text; admitting them
+                # as state-machine labels would recreate the old catch-all.
+                if len(feature_tokens) <= 4:
+                    add_normalized("feature", normalized_feature, record.parent_asin)
+                # Reuse the already-tokenized normalized feature instead of
+                # running the Unicode tokenizer a second time for every one
+                # of the catalog's feature sentences.
+                for token in feature_tokens:
+                    if len(token) >= 2 and token not in STOPWORDS:
+                        add_normalized("feature", token, record.parent_asin)
+            for token in safe_terms(record.title):
+                add("title_token", token, record.parent_asin)
+                for attribute, values in _COMMON_TITLE_ATTRIBUTE_VALUES.items():
+                    if token in values:
+                        add_normalized(attribute, token, record.parent_asin)
+
+        self._attribute_value_index = {
+            attribute: {
+                value: tuple(sorted(parent_asins))
+                for value, parent_asins in values.items()
+            }
+            for attribute, values in buckets.items()
+        }
+
     @property
     def ids(self) -> set[str]:
         return set(self.products)
@@ -580,6 +741,52 @@ class CatalogRepository:
         """Return normalized category sizes without exposing mutable indexes."""
 
         return dict(self._category_counts)
+
+    @property
+    def attribute_value_index(self) -> dict[str, dict[str, tuple[str, ...]]]:
+        """Return a defensive copy of strict catalog value indexes."""
+
+        return {
+            attribute: dict(values)
+            for attribute, values in self._attribute_value_index.items()
+        }
+
+    def attribute_values(self, attribute: object) -> tuple[str, ...]:
+        """Return normalized values observed for one structured attribute."""
+
+        key = str(attribute or "").strip().lower()
+        return tuple(sorted(self._attribute_value_index.get(key, {})))
+
+    def resolve_attribute_value(
+        self,
+        attribute: object,
+        value: object,
+        *,
+        candidate_ids: Iterable[str] | None = None,
+    ) -> tuple[str, tuple[str, ...]] | None:
+        """Resolve a value against a catalog-derived, field-scoped index.
+
+        The returned value is ``(normalized_value, matching_ids)``.  When a
+        candidate subset is supplied, the value must occur in that subset as
+        well; this lets callers prefer category-local enumerations without
+        changing the global catalog ground truth.
+        """
+
+        key = str(attribute or "").strip().lower()
+        normalized = normalize_attribute_value(value)
+        if not key or not normalized:
+            return None
+        values = self._attribute_value_index.get(key, {})
+        ids = values.get(normalized)
+        if not ids:
+            return None
+        if candidate_ids is not None:
+            allowed = {str(item).strip() for item in candidate_ids if str(item).strip()}
+            filtered = tuple(parent_asin for parent_asin in ids if parent_asin in allowed)
+            if not filtered:
+                return None
+            ids = filtered
+        return normalized, tuple(ids)
 
     def resolve_category(self, anchor: object) -> CategoryResolution:
         """Resolve the most specific unambiguous catalog category.
@@ -953,6 +1160,7 @@ __all__ = [
     "CatalogRepository",
     "ProductRecord",
     "RetrievedProduct",
+    "normalize_attribute_value",
     "normalize_category",
     "safe_match_expression",
     "safe_terms",

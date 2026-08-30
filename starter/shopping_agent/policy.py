@@ -414,6 +414,32 @@ class ClarificationPolicy:
                 values.append(matched.lower())
         return values
 
+    @staticmethod
+    def _constraint_attribute_sets(
+        state: SessionState,
+    ) -> tuple[set[str], set[str]]:
+        """Split confirmed slots from model-only hypotheses.
+
+        A model suggestion can make a question less urgent, but it is not a
+        customer answer.  In particular, keeping model-only attributes out of
+        ``confirmed`` means a high-information inferred slot remains eligible
+        for a later clarification turn.
+        """
+
+        confirmed: set[str] = set()
+        model_only: set[str] = set()
+        for item in state.active_constraints:
+            attribute = str(item.attribute)
+            if (
+                str(getattr(item, "source", "rule") or "rule").lower() == "model"
+                and not bool(getattr(item, "explicit", False))
+            ):
+                model_only.add(attribute)
+            else:
+                confirmed.add(attribute)
+        model_only.difference_update(confirmed)
+        return confirmed, model_only
+
     def _utility(
         self,
         attribute: str,
@@ -435,7 +461,12 @@ class ClarificationPolicy:
         base = 0.18 * self.ATTRIBUTE_ORDER.index(attribute)
         if attribute == "other":
             base -= 1.0
-        return entropy + min(evidence, 10) * 0.02 - base
+        # Model-only evidence is useful, but should not outrank an equally
+        # informative slot backed by the user's words.  The slot remains in
+        # the candidate set, so sufficient entropy/evidence can still win.
+        _confirmed, model_only = self._constraint_attribute_sets(state)
+        model_penalty = 0.25 if attribute in model_only else 0.0
+        return entropy + min(evidence, 10) * 0.02 - base - model_penalty
 
     def choose_attribute(
         self,
@@ -458,11 +489,11 @@ class ClarificationPolicy:
         ):
             return None
         exhausted = getattr(state, "attribute_exhausted", set()) | state.no_preference
+        confirmed_attributes, model_only_attributes = self._constraint_attribute_sets(state)
         if one_turn_reopen:
             # This is an event-scoped bypass, not a state transition.  Do not
             # ask the protocol fallback or any slot the user already
             # exhausted, answered, or constrained in the current epoch.
-            active_attributes = {item.attribute for item in state.active_constraints}
             available = [
                 attribute
                 for attribute in self.ATTRIBUTE_ORDER
@@ -470,7 +501,7 @@ class ClarificationPolicy:
                 and attribute != "other"
                 and attribute not in exhausted
                 and attribute not in state.asked_set
-                and attribute not in active_attributes
+                and attribute not in confirmed_attributes
             ]
             if not available:
                 return None
@@ -481,7 +512,11 @@ class ClarificationPolicy:
                     if self._candidate_values(candidates, attribute)
                     or (stats is not None and stats.attribute_entropy.get(attribute, 0.0) > 0)
                 ]
-                return (with_evidence or available)[0]
+                non_model = [
+                    attribute for attribute in with_evidence
+                    if attribute not in model_only_attributes
+                ]
+                return (non_model or with_evidence or available)[0]
             return max(available, key=lambda attribute: self._utility(attribute, state, candidates, stats))
         boundary_other_reask = bool(
             getattr(state, "boundary_seen", False)
@@ -493,9 +528,15 @@ class ClarificationPolicy:
         # in one answer.  With no candidate evidence (unit-level callers),
         # retain the explicit boundary re-ask behavior.
         boundary_reask_has_value = not candidates or len(candidates) > 5
+        first_broad_question = bool(
+            "other" not in exhausted and "other" not in state.asked_set
+        )
         if (
             self.mode == "protocol_aware"
-            and ("other" not in exhausted or (boundary_other_reask and boundary_reask_has_value))
+            and (
+                first_broad_question
+                or (boundary_other_reask and boundary_reask_has_value)
+            )
             and getattr(state, "no_progress_streak", 0) < 2
         ):
             return "other"
@@ -505,19 +546,32 @@ class ClarificationPolicy:
             if attribute in ALLOWED_ATTRIBUTES
             and attribute not in exhausted
             and attribute not in state.asked_set
+            and attribute not in confirmed_attributes
         ]
         if not available:
             return None
         if self.mode == "protocol_aware":
-            # Prefer attributes with actual candidate evidence, but retain a
-            # stable order when the fixture/catalog contains no metadata.
+            # After the one broad protocol question, ask the most useful
+            # concrete slot rather than repeating ``other``.  Candidate
+            # entropy and metadata coverage drive the choice; stable attribute
+            # order remains the deterministic tie breaker.
             with_evidence = [
                 attribute
                 for attribute in available
                 if self._candidate_values(candidates, attribute)
                 or (stats is not None and stats.attribute_entropy.get(attribute, 0.0) > 0)
             ]
-            return (with_evidence or available)[0]
+            non_model = [
+                attribute for attribute in with_evidence
+                if attribute not in model_only_attributes
+            ]
+            choices = non_model or with_evidence or available
+            return max(
+                choices,
+                key=lambda attribute: self._utility(
+                    attribute, state, candidates, stats
+                ),
+            )
         return max(available, key=lambda attribute: self._utility(attribute, state, candidates, stats))
 
     def choose(

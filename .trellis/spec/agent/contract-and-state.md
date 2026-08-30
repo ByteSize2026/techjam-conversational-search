@@ -60,6 +60,20 @@ respond(self, session_id: str, user_message: str, turn: int, top_k: int) -> dict
 
 全局信息耗尽通常停止继续提问，但存在一个事件级例外：用户同时明确否定当前推荐并要求继续询问具体属性时，只允许当前轮临时绕过提问禁令。不得清除持久的 `global_exhausted`，提交策略仍应按耗尽状态返回可用推荐；临时问题必须排除 `other`、已耗尽/已问属性和当前意图已有约束的属性。下一轮若没有新的明确请求，应恢复全局耗尽行为。
 
+### 模型意图的 catalog 准入
+
+模型输出通过 schema 校验只证明字段名合法，不证明字段值属于真实商品域。模型产生的
+`category`、`brand`、`color`、`material`、`size`、`style` 和 `feature` 在进入 reducer 前，
+必须命中本地 catalog 的同字段值索引；标题 token 使用独立索引，只能参与词法召回，不能
+自动冒充 feature。catalog 外的显式用户措辞可以保留为 soft lexical evidence，但不得成为
+结构化 hard filter。`budget`、数值 rating 和 `use_case` 沿用各自的范围/词法语义，不要求
+精确枚举。
+
+canonicalizer 使用闭合字段和逐行模板。未知 label、catalog ID 或任一 catalog 外结构化值
+都使该 completion 原子失败，整轮使用调用模型前冻结的 deterministic update；不得把合法的
+半份 mutation 混入状态。所有索引由冻结 catalog 在本地构建，不得把网络或第三方依赖变成
+离线正确性的前提。
+
 ## Scenario: provenance-aware Intent Override
 
 ### 1. Scope / Trigger
