@@ -44,6 +44,18 @@ ALLOWED_ATTRIBUTES: frozenset[str] = frozenset(
     }
 )
 
+# Attributes where a customer only ever wants one active value at a time
+# ("leather instead of canvas" means canvas is gone, not that both are now
+# acceptable).  ExtractConstraints is not reliably picking `action="replace"`
+# for these swaps -- it often emits `action="upsert"` for a plain "X instead
+# of Y" sentence -- so StateReducer.apply enforces the single-value invariant
+# itself instead of trusting the model's choice of mutation action.
+# `feature`/`use_case`/`budget`/`other` are deliberately excluded: a customer
+# can legitimately want several features or use cases active at once.
+SINGLE_VALUED_PREFERENCE_ATTRIBUTES: frozenset[str] = frozenset(
+    {"material", "color", "size", "style", "brand"}
+)
+
 _MATERIALS = (
     "cotton",
     "polyester",
@@ -585,6 +597,20 @@ class StateReducer:
                         item.status = "replaced" if mutation.action == "replace" else "removed"
             if mutation.action == "remove":
                 continue
+            if (
+                mutation.action == "upsert"
+                and attribute in SINGLE_VALUED_PREFERENCE_ATTRIBUTES
+                and mutation.polarity in {"prefer", "require"}
+            ):
+                for item in state.constraints:
+                    if (
+                        item.active
+                        and item.attribute == attribute
+                        and item.polarity == mutation.polarity
+                        and item.normalized_value() != value.lower()
+                    ):
+                        item.active = False
+                        item.status = "replaced"
             duplicate = next(
                 (
                     item
@@ -667,9 +693,15 @@ class StateReducer:
 
 
 def _extract_category(message: str) -> str | None:
+    # Negative lookbehind rules out "not/isn't/aren't looking for X" -- a
+    # negated clause names what the customer does NOT want, never a category
+    # claim. The eval harness's own reply templates never produce this
+    # phrasing (checked against every ``customer_reply`` string), but this
+    # helper is also used by ``extract_category_hint`` against arbitrary
+    # real-conversation turns, not just the harness's fixed opening line.
     patterns = (
-        r"\blooking\s+for\s+(.+?)(?=[.!?]|,\s*(?:but|and|with)\b|$)",
-        r"\bshopping\s+for\s+(.+?)(?=[.!?]|,\s*(?:but|and|with)\b|$)",
+        r"(?<!not\s)(?<!n't\s)\blooking\s+for\s+(.+?)(?=[.!?]|,\s*(?:but|and|with)\b|$)",
+        r"(?<!not\s)(?<!n't\s)\bshopping\s+for\s+(.+?)(?=[.!?]|,\s*(?:but|and|with)\b|$)",
     )
     for pattern in patterns:
         match = re.search(pattern, message, re.I)
@@ -707,6 +739,28 @@ def _extract_no_preference(message: str) -> set[str]:
     if re.search(r"\b(any|anything|whatever)\s+(?:is fine|works|goes)\b", message, re.I):
         found.add("other")
     return {item for item in found if item in ALLOWED_ATTRIBUTES}
+
+
+def extract_category_hint(message: object) -> str | None:
+    """Cheap deterministic backstop for a missing ``category_anchor``.
+
+    ``ExtractConstraints``'s LLM call can succeed -- valid JSON, every other
+    field populated -- while still leaving ``category_anchor`` null, because
+    the schema gives the model no worked example of what counts as a
+    category phrase. A compound catalog label like "Outdoor & Work Rain" is
+    exactly the phrasing it drops most often, and since that phrase usually
+    only appears in the customer's opening line, a miss there is otherwise
+    unrecoverable for the rest of the session (`category_anchor` is set once
+    and never re-derived). Reuses the same "looking/shopping for ..."
+    pattern the fully-deterministic v1 parser (below) already relies on, so
+    this only ever recovers a phrase that was directly in the message, never
+    a guess.
+    """
+
+    text = _clean(message, 1200)
+    if not text:
+        return None
+    return _extract_category(text)
 
 
 def parse_intent_update(message: object, *, turn: int = 0) -> IntentUpdate:
@@ -858,5 +912,6 @@ __all__ = [
     "StateReducer",
     "TurnMessage",
     "bind_clarification_answer",
+    "extract_category_hint",
     "parse_intent_update",
 ]

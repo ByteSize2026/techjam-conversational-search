@@ -129,6 +129,135 @@ class SharedRetryFallbackHelperTest(unittest.TestCase):
             self.assertEqual(client.calls, 0)  # never touched -- client wasn't even passed in
 
 
+class ExtractConstraintsCategoryHintFallbackTest(unittest.TestCase):
+    """ARCHITECTURE_IMPROVEMENT_PLAN.md item 2a: a live diagnostic run found
+    the model returning valid JSON with every field populated except
+    ``category_anchor`` (null) for a compound catalog phrase like "Outdoor &
+    Work Rain" -- and since that phrase only appears in the opening message,
+    a miss there froze the category-resolved pool for the rest of the
+    session. ``_extract_constraints_node`` now patches a null
+    ``category_anchor`` from the same deterministic regex the total-fallback
+    parser already uses, but only when the model supplied nothing and no
+    anchor is set yet."""
+
+    def test_null_category_anchor_is_backfilled_from_message(self) -> None:
+        client = _ScriptedClient(
+            [
+                {
+                    "global_override": False,
+                    "mutations": [],
+                    "category_anchor": None,
+                    "no_preference": [],
+                    "query_terms": ["Outdoor & Work Rain"],
+                    "confidence": 0.8,
+                }
+            ]
+        )
+        services = graph.GraphServices(model_client=client)
+        session = SessionState(session_id="category-hint-fallback")
+        gs = graph.GraphState(
+            session=session,
+            turn=1,
+            top_k=10,
+            message="I'm looking for Outdoor & Work Rain, but I'm still exploring.",
+            services=services,
+        )
+
+        graph.NODES["ExtractConstraints"](gs, {})
+
+        self.assertEqual(session.category_anchor, "Outdoor & Work Rain")
+
+    def test_does_not_override_an_explicit_model_anchor(self) -> None:
+        client = _ScriptedClient(
+            [
+                {
+                    "global_override": False,
+                    "mutations": [],
+                    "category_anchor": "Rain Boots",
+                    "no_preference": [],
+                    "query_terms": [],
+                    "confidence": 0.8,
+                }
+            ]
+        )
+        services = graph.GraphServices(model_client=client)
+        session = SessionState(session_id="category-hint-no-override")
+        gs = graph.GraphState(
+            session=session,
+            turn=1,
+            top_k=10,
+            message="I'm looking for Outdoor & Work Rain, but I'm still exploring.",
+            services=services,
+        )
+
+        graph.NODES["ExtractConstraints"](gs, {})
+
+        self.assertEqual(session.category_anchor, "Rain Boots")
+
+    def test_does_not_backfill_on_a_model_reported_override_turn(self) -> None:
+        """Mirrors ``parse_intent_update``'s own ``if not override`` guard
+        (state.py) -- an override turn's phrasing is a swap, not a fresh
+        category claim, and ``StateReducer.apply`` already preserves
+        whatever anchor is set through an override."""
+
+        client = _ScriptedClient(
+            [
+                {
+                    "global_override": True,
+                    "mutations": [],
+                    "category_anchor": None,
+                    "no_preference": [],
+                    "query_terms": ["sneakers"],
+                    "confidence": 0.8,
+                }
+            ]
+        )
+        services = graph.GraphServices(model_client=client)
+        session = SessionState(session_id="category-hint-model-override")
+        gs = graph.GraphState(
+            session=session,
+            turn=3,
+            top_k=10,
+            message="Actually, forget boots, I'm looking for sneakers instead.",
+            services=services,
+        )
+
+        graph.NODES["ExtractConstraints"](gs, {})
+
+        self.assertIsNone(session.category_anchor)
+
+    def test_does_not_backfill_on_a_router_forced_override_turn(self) -> None:
+        """Same guard, but for ``IntentRouter2``'s ``new_search`` branch --
+        ``args["override"]`` forces ``global_override`` a few lines after
+        this backstop runs, so the backstop must anticipate it too."""
+
+        client = _ScriptedClient(
+            [
+                {
+                    "global_override": False,
+                    "mutations": [],
+                    "category_anchor": None,
+                    "no_preference": [],
+                    "query_terms": ["sneakers"],
+                    "confidence": 0.8,
+                }
+            ]
+        )
+        services = graph.GraphServices(model_client=client)
+        session = SessionState(session_id="category-hint-router-override")
+        gs = graph.GraphState(
+            session=session,
+            turn=3,
+            top_k=10,
+            message="Actually, forget boots, I'm looking for sneakers instead.",
+            services=services,
+        )
+
+        graph.NODES["ExtractConstraints"](gs, {"override": True})
+
+        self.assertIsNone(session.category_anchor)
+
+
 class DistillTriggerRouterGatingTest(unittest.TestCase):
     """design.md Section 9: a no-op turn must produce zero model calls."""
 

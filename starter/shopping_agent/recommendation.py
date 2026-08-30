@@ -624,11 +624,25 @@ class CatalogRecommendationEngine:
         if limit is not None:
             input_candidates = input_candidates[: max(int(limit), 0)]
         query_terms = set(safe_terms(" ".join(state.query_terms)))
+        # ``item.score`` is the raw retrieval-stage BM25/RRF score, whose
+        # magnitude tracks term-frequency/document-length effects (a verbose
+        # listing that repeats a matched word scores far higher than a terse
+        # one that states it once) and is not comparable to the bounded
+        # constraint-match bonuses below.  Left unnormalized, a 50-60x raw
+        # score gap between candidates can swamp a perfect hard-constraint
+        # match -- min-max normalizing it into this turn's own pool keeps it
+        # a mild tie-break signal instead of letting it dominate ranking.
+        raw_scores = [item.score for item in input_candidates]
+        raw_lo = min(raw_scores) if raw_scores else 0.0
+        raw_spread = (max(raw_scores) - raw_lo) if raw_scores else 0.0
         scored: list[tuple[float, int, RetrievedProduct]] = []
         for index, item in enumerate(input_candidates):
             product = item.product
             text = product.canonical_text.lower()
-            score = item.score + 0.18 * sum(term in text for term in query_terms)
+            normalized_retrieve_score = (
+                (item.score - raw_lo) / raw_spread if raw_spread > 0 else 0.0
+            )
+            score = 8.0 * normalized_retrieve_score + 0.18 * sum(term in text for term in query_terms)
             # Category membership is established by the exact category route
             # before this stage.  Give that route a relevance-first boost so a
             # globally popular but unrelated lexical hit cannot displace a
@@ -662,8 +676,6 @@ class CatalogRecommendationEngine:
             scored.append((score, index, item))
         scored.sort(key=lambda value: (-value[0], value[1], value[2].parent_asin))
         ordered = [value[2] for value in scored]
-        unseen = [item for item in ordered if item.parent_asin not in state.seen_recommendations]
-        ordered = unseen + [item for item in ordered if item.parent_asin in state.seen_recommendations] if unseen else ordered
         if context.route_hint == "browsing":
             ordered = self._diversify(ordered)
         output_limit = max(int(limit), 0) if limit is not None else max(self.config.retrieval_limit, self.config.candidate_limit)

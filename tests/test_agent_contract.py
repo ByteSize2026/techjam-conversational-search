@@ -167,6 +167,15 @@ class AgentContractTests(unittest.TestCase):
         self.assertEqual(update.mutations, ())
         self.assertEqual(update.query_terms, ())
 
+    def test_negated_looking_for_is_not_a_category_claim(self) -> None:
+        """ARCHITECTURE_IMPROVEMENT_PLAN.md item 2a: ``_extract_category``
+        (reused by both the total-LLM-failure fallback and
+        ``extract_category_hint``'s narrower backstop) must not read a
+        negated clause as the customer naming a category."""
+
+        update = parse_intent_update("I'm not looking for anything cheap; quality matters more.")
+        self.assertIsNone(update.category_anchor)
+
     def test_route_changes_retrieval_sources_and_weights(self) -> None:
         agent = Agent(self.catalog_path)
 

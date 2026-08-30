@@ -105,6 +105,7 @@ from .state import (
     SessionState,
     StateReducer,
     bind_clarification_answer,
+    extract_category_hint,
     parse_intent_update,
 )
 
@@ -831,6 +832,25 @@ def _extract_constraints_node(gs: GraphState, args: dict[str, object]) -> GraphS
     )
     if output is not None:
         update = llm_nodes.extract_constraints_output_to_intent_update(output, session=session)
+        # The model's own field can come back null even on an otherwise
+        # successful call (see ``extract_category_hint``'s docstring). Only
+        # patch it in when the session has no anchor yet and the model
+        # didn't supply one -- never overrides a real model answer. Mirrors
+        # ``parse_intent_update``'s own ``if not override`` guard (state.py):
+        # an override turn's phrasing is a swap, not a fresh category claim,
+        # and StateReducer.apply already keeps whatever anchor is set through
+        # an override -- this must not invent one from override wording.
+        # ``override_forced`` is checked too since it flips ``global_override``
+        # to true a few lines below regardless of what the model itself said.
+        if (
+            update.category_anchor is None
+            and session.category_anchor is None
+            and not update.global_override
+            and not override_forced
+        ):
+            hint = extract_category_hint(gs.message)
+            if hint:
+                update = dataclass_replace(update, category_anchor=hint)
     else:
         update = parse_intent_update(gs.message, turn=gs.turn)
         if pending is not None:
