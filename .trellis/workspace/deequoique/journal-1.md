@@ -194,3 +194,25 @@ Restored the original retrieval/state pipeline as the only starter.agent.Agent, 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 10: 统一双 Evaluator 协议并合并 main
+
+**Date**: 2026-08-30
+**Task**: 统一双 Evaluator 协议并合并 main
+**Branch**: `main`
+
+### Summary
+
+为 Agent 增加 official 与 natural_language 显式协议 profile，恢复 official 公开集基线 1.0/0.805024/0.901407，完成 benchmark 参数透传、测试验证并合并到本地 main。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c1d9f86` | (see git log) |
+| `bcdf1b3` | (see git log) |
+
+### Status
+
+[OK] **Completed**
