@@ -1,0 +1,215 @@
+{
+  "sample_count": 10,
+  "live_model_configured": true,
+  "deterministic": {
+    "elapsed_s": 38.0,
+    "metrics": {
+      "hit_rate_at_10": 0.9,
+      "mrr": 0.489286,
+      "mttc": 5.0,
+      "efficiency": 0.6,
+      "recommended_technical_score": 0.716786,
+      "reported_token_usage": {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0
+      }
+    },
+    "node_stats": {
+      "ExtractConstraints": {
+        "calls": 49,
+        "first_attempt_success": 0,
+        "first_attempt_success_rate": 0.0,
+        "retry_needed": 0,
+        "retry_success": 0,
+        "total_fallback": 49,
+        "total_fallback_rate": 1.0,
+        "avg_elapsed_ms": 0.0,
+        "max_elapsed_ms": 0.0
+      },
+      "DistillProfile": {
+        "calls": 46,
+        "first_attempt_success": 0,
+        "first_attempt_success_rate": 0.0,
+        "retry_needed": 0,
+        "retry_success": 0,
+        "total_fallback": 46,
+        "total_fallback_rate": 1.0,
+        "avg_elapsed_ms": 0.0,
+        "max_elapsed_ms": 0.0
+      },
+      "Explain": {
+        "calls": 7,
+        "first_attempt_success": 0,
+        "first_attempt_success_rate": 0.0,
+        "retry_needed": 0,
+        "retry_success": 0,
+        "total_fallback": 7,
+        "total_fallback_rate": 1.0,
+        "avg_elapsed_ms": 0.1,
+        "max_elapsed_ms": 0.5
+      },
+      "ClassifyIntent": {
+        "calls": 3,
+        "first_attempt_success": 0,
+        "first_attempt_success_rate": 0.0,
+        "retry_needed": 0,
+        "retry_success": 0,
+        "total_fallback": 3,
+        "total_fallback_rate": 1.0,
+        "avg_elapsed_ms": 0.0,
+        "max_elapsed_ms": 0.0
+      },
+      "AskAttribute": {
+        "calls": 42,
+        "first_attempt_success": 0,
+        "first_attempt_success_rate": 0.0,
+        "retry_needed": 0,
+        "retry_success": 0,
+        "total_fallback": 42,
+        "total_fallback_rate": 1.0,
+        "avg_elapsed_ms": 0.0,
+        "max_elapsed_ms": 0.1
+      }
+    },
+    "backend_stats": {
+      "SemanticRank": {
+        "attempts": 7,
+        "successes": 0,
+        "success_rate": 0.0,
+        "avg_elapsed_ms": 0.1,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "backends_used": {}
+      }
+    }
+  },
+  "live": {
+    "elapsed_s": 30.8,
+    "metrics": {
+      "hit_rate_at_10": 0.9,
+      "mrr": 0.489286,
+      "mttc": 5.0,
+      "efficiency": 0.6,
+      "recommended_technical_score": 0.716786,
+      "reported_token_usage": {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0
+      }
+    },
+    "node_stats": {
+      "ExtractConstraints": {
+        "calls": 49,
+        "first_attempt_success": 0,
+        "first_attempt_success_rate": 0.0,
+        "retry_needed": 49,
+        "retry_success": 0,
+        "total_fallback": 49,
+        "total_fallback_rate": 1.0,
+        "avg_elapsed_ms": 6.7,
+        "max_elapsed_ms": 67.6
+      },
+      "DistillProfile": {
+        "calls": 46,
+        "first_attempt_success": 0,
+        "first_attempt_success_rate": 0.0,
+        "retry_needed": 46,
+        "retry_success": 0,
+        "total_fallback": 46,
+        "total_fallback_rate": 1.0,
+        "avg_elapsed_ms": 3.7,
+        "max_elapsed_ms": 8.8
+      },
+      "Explain": {
+        "calls": 7,
+        "first_attempt_success": 0,
+        "first_attempt_success_rate": 0.0,
+        "retry_needed": 7,
+        "retry_success": 0,
+        "total_fallback": 7,
+        "total_fallback_rate": 1.0,
+        "avg_elapsed_ms": 3.6,
+        "max_elapsed_ms": 4.6
+      },
+      "ClassifyIntent": {
+        "calls": 3,
+        "first_attempt_success": 0,
+        "first_attempt_success_rate": 0.0,
+        "retry_needed": 3,
+        "retry_success": 0,
+        "total_fallback": 3,
+        "total_fallback_rate": 1.0,
+        "avg_elapsed_ms": 4.1,
+        "max_elapsed_ms": 6.2
+      },
+      "AskAttribute": {
+        "calls": 42,
+        "first_attempt_success": 0,
+        "first_attempt_success_rate": 0.0,
+        "retry_needed": 42,
+        "retry_success": 0,
+        "total_fallback": 42,
+        "total_fallback_rate": 1.0,
+        "avg_elapsed_ms": 4.5,
+        "max_elapsed_ms": 16.1
+      }
+    },
+    "backend_stats": {
+      "ExtractConstraints": {
+        "attempts": 98,
+        "successes": 0,
+        "success_rate": 0.0,
+        "avg_elapsed_ms": 2.2,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "backends_used": {}
+      },
+      "DistillProfile": {
+        "attempts": 92,
+        "successes": 0,
+        "success_rate": 0.0,
+        "avg_elapsed_ms": 1.5,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "backends_used": {}
+      },
+      "SemanticRank": {
+        "attempts": 7,
+        "successes": 0,
+        "success_rate": 0.0,
+        "avg_elapsed_ms": 2.3,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "backends_used": {}
+      },
+      "Explain": {
+        "attempts": 14,
+        "successes": 0,
+        "success_rate": 0.0,
+        "avg_elapsed_ms": 1.6,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "backends_used": {}
+      },
+      "ClassifyIntent": {
+        "attempts": 6,
+        "successes": 0,
+        "success_rate": 0.0,
+        "avg_elapsed_ms": 1.6,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "backends_used": {}
+      },
+      "AskAttribute": {
+        "attempts": 84,
+        "successes": 0,
+        "success_rate": 0.0,
+        "avg_elapsed_ms": 2.0,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "backends_used": {}
+      }
+    }
+  }
+}
