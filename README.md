@@ -49,6 +49,26 @@ python3 -m evaluator.local_evaluator \
 `results.json` 是本地产物，已被 Git 忽略。指标定义和结果解释见
 [本地开发与评测](docs/development/local-evaluation.md)。
 
+### 4. 逐轮 CLI 演示
+
+仓库也提供一个直接从终端输入消息的 REPL；它复用同一个 `Agent`，不改变评测逻辑。
+离线版无需模型或网络：
+
+```bash
+python3 -m starter.cli --protocol-profile official
+```
+
+自然语言在线版先在本地 `.env` 配置 DeepSeek key，再运行：
+
+```bash
+set -a; source .env; set +a
+export SHOPPING_AGENT_INTENT_MODEL_ENABLED=true
+export SHOPPING_AGENT_INTENT_MODEL_MODE=model_first
+python3 -m starter.cli --protocol-profile natural_language --show-diagnostics
+```
+
+输入 `:help` 查看命令，输入 `:reset` 重置会话，输入 `:exit` 或 `quit` 退出。
+
 ## 协议 Profile
 
 同一个 `Agent` 支持两个显式协议 profile；它不会根据消息内容或数据分布猜测当前
