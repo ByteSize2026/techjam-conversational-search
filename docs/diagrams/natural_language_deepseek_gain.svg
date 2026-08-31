@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="940" viewBox="0 0 1120 940" role="img">
+<title>自然语言 evaluator：DeepSeek 的提升</title>
+<desc>Official deterministic agent compared with the DeepSeek translation layer on 100 frozen natural-language samples.</desc>
+<rect x="0.0" y="0.0" width="1120.0" height="940.0" rx="0" fill="#FFFFFF" stroke="none"/>
+<text x="60.0" y="58.0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Noto Sans CJK SC',sans-serif" font-size="25" fill="#17324D" text-anchor="start" font-weight="700">自然语言 evaluator：DeepSeek 显著改善交互理解</text>
+<text x="60.0" y="84.0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Noto Sans CJK SC',sans-serif" font-size="13" fill="#60717C" text-anchor="start" font-weight="400">独立冻结集 N=100 · 7 类自然语言场景 · 仅在本 evaluator 内比较</text>
+<rect x="885.0" y="45.0" width="12.0" height="10.0" rx="2" fill="#98A6B3" stroke="none"/>
+<text x="905.0" y="55.0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Noto Sans CJK SC',sans-serif" font-size="12" fill="#60717C" text-anchor="start" font-weight="400">Official</text>
+<rect x="1010.0" y="45.0" width="12.0" height="10.0" rx="2" fill="#1479C9" stroke="none"/>
+<text x="1030.0" y="55.0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Noto Sans CJK SC',sans-serif" font-size="12" fill="#1479C9" text-anchor="start" font-weight="400">+ DeepSeek</text>
+<text x="60.0" y="132.0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Noto Sans CJK SC',sans-serif" font-size="17" fill="#17324D" text-anchor="start" font-weight="700">总体质量</text>
+<text x="60.0" y="155.0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Noto Sans CJK SC',sans-serif" font-size="12" fill="#60717C" text-anchor="start" font-weight="400">DeepSeek 只负责自然语言翻译；商品候选、状态修改和最终提交仍由确定性核心完成。</text>
+<line x1="285.0" y1="170.0" x2="930.0" y2="170.0" stroke="#60717C" stroke-width="1"/>
+<line x1="285.0" y1="166.0" x2="285.0" y2="174.0" stroke="#60717C" stroke-width="1"/>
+<text x="285.0" y="190.0" font-family="'SF Mono','Roboto Mono',monospace" font-size="11" fill="#60717C" text-anchor="middle" font-weight="400">0.00</text>
+<line x1="446.2" y1="166.0" x2="446.2" y2="174.0" stroke="#60717C" stroke-width="1"/>
+<text x="446.2" y="190.0" font-family="'SF Mono','Roboto Mono',monospace" font-size="11" fill="#60717C" text-anchor="middle" font-weight="400">0.25</text>
+<line x1="607.5" y1="166.0" x2="607.5" y2="174.0" stroke="#60717C" stroke-width="1"/>
+<text x="607.5" y="190.0" font-family="'SF Mono','Roboto Mono',monospace" font-size="11" fill="#60717C" text-anchor="middle" font-weight="400">0.50</text>
+<line x1="768.8" y1="166.0" x2="768.8" y2="174.0" stroke="#60717C" stroke-width="1"/>
+<text x="768.8" y="190.0" font-family="'SF Mono','Roboto Mono',monospace" font-size="11" fill="#60717C" text-anchor="middle" font-weight="400">0.75</text>
+<line x1="930.0" y1="166.0" x2="930.0" y2="174.0" stroke="#60717C" stroke-width="1"/>
+<text x="930.0" y="190.0" font-family="'SF Mono','Roboto Mono',monospace" font-size="11" fill="#60717C" text-anchor="middle" font-weight="400">1.00</text>
+<text x="267.0" y="209.0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Noto Sans CJK SC',sans-serif" font-size="14" fill="#17324D" text-anchor="end" font-weight="600">Hit@10</text>
+<rect x="285.0" y="195.0" width="374.1" height="11.0" rx="2" fill="#98A6B3" stroke="none"/>
+<rect x="285.0" y="211.0" width="496.7" height="11.0" rx="2" fill="#1479C9" stroke="none"/>
+<text x="667.1" y="205.0" font-family="'SF Mono','Roboto Mono',monospace" font-size="11" fill="#60717C" text-anchor="start" font-weight="400">0.580</text>
+<text x="789.7" y="221.0" font-family="'SF Mono','Roboto Mono',monospace" font-size="11" fill="#1479C9" text-anchor="start" font-weight="400">0.770</text>
+<text x="267.0" y="267.0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Noto Sans CJK SC',sans-serif" font-size="14" fill="#17324D" text-anchor="end" font-weight="600">Exact Top-1</text>
+<rect x="285.0" y="253.0" width="174.2" height="11.0" rx="2" fill="#98A6B3" stroke="none"/>
+<rect x="285.0" y="269.0" width="328.9" height="11.0" rx="2" fill="#1479C9" stroke="none"/>
+<text x="467.1" y="263.0" font-family="'SF Mono','Roboto Mono',monospace" font-size="11" fill="#60717C" text-anchor="start" font-weight="400">0.270</text>
+<text x="622.0" y="279.0" font-family="'SF Mono','Roboto Mono',monospace" font-size="11" fill="#1479C9" text-anchor="start" font-weight="400">0.510</text>
+<text x="267.0" y="325.0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Noto Sans CJK SC',sans-serif" font-size="14" fill="#17324D" text-anchor="end" font-weight="600">MRR</text>
+<rect x="285.0" y="311.0" width="236.0" height="11.0" rx="2" fill="#98A6B3" stroke="none"/>
+<rect x="285.0" y="327.0" width="390.3" height="11.0" rx="2" fill="#1479C9" stroke="none"/>
+<text x="529.0" y="321.0" font-family="'SF Mono','Roboto Mono',monospace" font-size="11" fill="#60717C" text-anchor="start" font-weight="400">0.366</text>
+<text x="683.3" y="337.0" font-family="'SF Mono','Roboto Mono',monospace" font-size="11" fill="#1479C9" text-anchor="start" font-weight="400">0.605</text>
+<text x="60.0" y="395.0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Noto Sans CJK SC',sans-serif" font-size="17" fill="#17324D" text-anchor="start" font-weight="700">命中速度</text>
+<text x="60.0" y="418.0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Noto Sans CJK SC',sans-serif" font-size="12" fill="#60717C" text-anchor="start" font-weight="400">平均 MTTC 从 7.08 降至 3.72（减少 3.36 轮）。</text>
+<line x1="285.0" y1="430.0" x2="930.0" y2="430.0" stroke="#60717C" stroke-width="1"/>
+<line x1="285.0" y1="426.0" x2="285.0" y2="434.0" stroke="#60717C" stroke-width="1"/>
+<text x="285.0" y="450.0" font-family="'SF Mono','Roboto Mono',monospace" font-size="11" fill="#60717C" text-anchor="middle" font-weight="400">0.00</text>
+<line x1="460.9" y1="426.0" x2="460.9" y2="434.0" stroke="#60717C" stroke-width="1"/>
+<text x="460.9" y="450.0" font-family="'SF Mono','Roboto Mono',monospace" font-size="11" fill="#60717C" text-anchor="middle" font-weight="400">3.00</text>
+<line x1="636.8" y1="426.0" x2="636.8" y2="434.0" stroke="#60717C" stroke-width="1"/>
+<text x="636.8" y="450.0" font-family="'SF Mono','Roboto Mono',monospace" font-size="11" fill="#60717C" text-anchor="middle" font-weight="400">6.00</text>
+<line x1="812.7" y1="426.0" x2="812.7" y2="434.0" stroke="#60717C" stroke-width="1"/>
+<text x="812.7" y="450.0" font-family="'SF Mono','Roboto Mono',monospace" font-size="11" fill="#60717C" text-anchor="middle" font-weight="400">9.00</text>
+<line x1="930.0" y1="426.0" x2="930.0" y2="434.0" stroke="#60717C" stroke-width="1"/>
+<text x="930.0" y="450.0" font-family="'SF Mono','Roboto Mono',monospace" font-size="11" fill="#60717C" text-anchor="middle" font-weight="400">11.00</text>
+<text x="267.0" y="469.0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Noto Sans CJK SC',sans-serif" font-size="14" fill="#17324D" text-anchor="end" font-weight="600">MTTC (turns)</text>
+<rect x="285.0" y="455.0" width="415.1" height="11.0" rx="2" fill="#98A6B3" stroke="none"/>
+<rect x="285.0" y="471.0" width="218.1" height="11.0" rx="2" fill="#1479C9" stroke="none"/>
+<text x="708.1" y="465.0" font-family="'SF Mono','Roboto Mono',monospace" font-size="11" fill="#60717C" text-anchor="start" font-weight="400">7.08</text>
+<text x="511.1" y="481.0" font-family="'SF Mono','Roboto Mono',monospace" font-size="11" fill="#1479C9" text-anchor="start" font-weight="400">3.72</text>
+<text x="60.0" y="565.0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Noto Sans CJK SC',sans-serif" font-size="17" fill="#17324D" text-anchor="start" font-weight="700">场景级 Hit@10：自然表达带来的收益</text>
+<text x="60.0" y="588.0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Noto Sans CJK SC',sans-serif" font-size="12" fill="#60717C" text-anchor="start" font-weight="400">条形末端标注 Official → DeepSeek；绿色表示提升，红色表示退化。</text>
+<text x="267.0" y="625.0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Noto Sans CJK SC',sans-serif" font-size="12" fill="#17324D" text-anchor="end" font-weight="400">Budget rating</text>
+<line x1="285.0" y1="620.0" x2="930.0" y2="620.0" stroke="#D7E0E6" stroke-width="2"/>
+<line x1="561.7" y1="620.0" x2="745.5" y2="620.0" stroke="#198754" stroke-width="5"/>
+<circle cx="561.7" cy="620.0" r="5.0" fill="#98A6B3" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="745.5" cy="620.0" r="5.0" fill="#1479C9" stroke="#FFFFFF" stroke-width="2"/>
+<text x="942.0" y="625.0" font-family="'SF Mono','Roboto Mono',monospace" font-size="11" fill="#198754" text-anchor="start" font-weight="400">0.429 → 0.714</text>
+<text x="267.0" y="660.0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Noto Sans CJK SC',sans-serif" font-size="12" fill="#17324D" text-anchor="end" font-weight="400">Clarification</text>
+<line x1="285.0" y1="655.0" x2="930.0" y2="655.0" stroke="#D7E0E6" stroke-width="2"/>
+<line x1="745.5" y1="655.0" x2="745.5" y2="655.0" stroke="#60717C" stroke-width="5"/>
+<circle cx="745.5" cy="655.0" r="5.0" fill="#98A6B3" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="745.5" cy="655.0" r="5.0" fill="#1479C9" stroke="#FFFFFF" stroke-width="2"/>
+<text x="942.0" y="660.0" font-family="'SF Mono','Roboto Mono',monospace" font-size="11" fill="#60717C" text-anchor="start" font-weight="400">0.714 → 0.714</text>
+<text x="267.0" y="695.0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Noto Sans CJK SC',sans-serif" font-size="12" fill="#17324D" text-anchor="end" font-weight="400">Direct search</text>
+<line x1="285.0" y1="690.0" x2="930.0" y2="690.0" stroke="#D7E0E6" stroke-width="2"/>
+<line x1="801.0" y1="690.0" x2="930.0" y2="690.0" stroke="#198754" stroke-width="5"/>
+<circle cx="801.0" cy="690.0" r="5.0" fill="#98A6B3" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="930.0" cy="690.0" r="5.0" fill="#1479C9" stroke="#FFFFFF" stroke-width="2"/>
+<text x="942.0" y="695.0" font-family="'SF Mono','Roboto Mono',monospace" font-size="11" fill="#198754" text-anchor="start" font-weight="400">0.800 → 1.000</text>
+<text x="267.0" y="730.0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Noto Sans CJK SC',sans-serif" font-size="12" fill="#17324D" text-anchor="end" font-weight="400">Intent override</text>
+<line x1="285.0" y1="725.0" x2="930.0" y2="725.0" stroke="#D7E0E6" stroke-width="2"/>
+<line x1="561.7" y1="725.0" x2="837.8" y2="725.0" stroke="#198754" stroke-width="5"/>
+<circle cx="561.7" cy="725.0" r="5.0" fill="#98A6B3" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="837.8" cy="725.0" r="5.0" fill="#1479C9" stroke="#FFFFFF" stroke-width="2"/>
+<text x="942.0" y="730.0" font-family="'SF Mono','Roboto Mono',monospace" font-size="11" fill="#198754" text-anchor="start" font-weight="400">0.429 → 0.857</text>
+<text x="267.0" y="765.0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Noto Sans CJK SC',sans-serif" font-size="12" fill="#17324D" text-anchor="end" font-weight="400">Multi constraint</text>
+<line x1="285.0" y1="760.0" x2="930.0" y2="760.0" stroke="#D7E0E6" stroke-width="2"/>
+<line x1="844.2" y1="760.0" x2="801.0" y2="760.0" stroke="#C44747" stroke-width="5"/>
+<circle cx="844.2" cy="760.0" r="5.0" fill="#98A6B3" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="801.0" cy="760.0" r="5.0" fill="#1479C9" stroke="#FFFFFF" stroke-width="2"/>
+<text x="942.0" y="765.0" font-family="'SF Mono','Roboto Mono',monospace" font-size="11" fill="#C44747" text-anchor="start" font-weight="400">0.867 → 0.800</text>
+<text x="267.0" y="800.0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Noto Sans CJK SC',sans-serif" font-size="12" fill="#17324D" text-anchor="end" font-weight="400">Negative constraint</text>
+<line x1="285.0" y1="795.0" x2="930.0" y2="795.0" stroke="#D7E0E6" stroke-width="2"/>
+<line x1="699.7" y1="795.0" x2="792.0" y2="795.0" stroke="#198754" stroke-width="5"/>
+<circle cx="699.7" cy="795.0" r="5.0" fill="#98A6B3" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="792.0" cy="795.0" r="5.0" fill="#1479C9" stroke="#FFFFFF" stroke-width="2"/>
+<text x="942.0" y="800.0" font-family="'SF Mono','Roboto Mono',monospace" font-size="11" fill="#198754" text-anchor="start" font-weight="400">0.643 → 0.786</text>
+<text x="267.0" y="835.0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Noto Sans CJK SC',sans-serif" font-size="12" fill="#17324D" text-anchor="end" font-weight="400">Profile hidden</text>
+<line x1="285.0" y1="830.0" x2="930.0" y2="830.0" stroke="#D7E0E6" stroke-width="2"/>
+<line x1="377.2" y1="830.0" x2="607.5" y2="830.0" stroke="#198754" stroke-width="5"/>
+<circle cx="377.2" cy="830.0" r="5.0" fill="#98A6B3" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="607.5" cy="830.0" r="5.0" fill="#1479C9" stroke="#FFFFFF" stroke-width="2"/>
+<text x="942.0" y="835.0" font-family="'SF Mono','Roboto Mono',monospace" font-size="11" fill="#198754" text-anchor="start" font-weight="400">0.143 → 0.500</text>
+<text x="60.0" y="885.0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Noto Sans CJK SC',sans-serif" font-size="17" fill="#17324D" text-anchor="start" font-weight="700">资源代价</text>
+<text x="60.0" y="908.0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Noto Sans CJK SC',sans-serif" font-size="12" fill="#60717C" text-anchor="start" font-weight="400">100 题运行：总耗时 447.01 → 677.93 s；reported tokens 0 → 924,200（DeepSeek 922,047 + fallback 2,153）；峰值估算成本约 $0.036–$0.421。</text>
+<text x="60.0" y="932.0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Noto Sans CJK SC',sans-serif" font-size="11" fill="#17324D" text-anchor="start" font-weight="600">结论：DeepSeek 的价值集中在自然语言理解边界，而不是替代召回、排序或状态机。</text>
+</svg>

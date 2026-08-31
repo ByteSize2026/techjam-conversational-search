@@ -1,0 +1,269 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1750" viewBox="0 0 1200 1750" role="img" aria-labelledby="title desc">
+<title id="title">智能自然语言 evaluator v2 · 冻结 100 题</title>
+<desc id="desc">7 类 target-exact 自然语言场景 · simulator_version 2</desc>
+<rect x="0.0" y="0.0" width="1200.0" height="1750.0" rx="0.0" fill="#F7F9FA" stroke="none"/>
+<rect x="42.0" y="28.0" width="250.0" height="34.0" rx="17.0" fill="#17202A" stroke="none"/>
+<text x="167.0" y="51.0" font-size="14" font-weight="700" fill="#FFFFFF" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">NATURAL-LANGUAGE V2 · N=100</text>
+<text x="42.0" y="101.0" font-size="34" font-weight="750" fill="#17202A" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">智能自然语言 evaluator v2 · 冻结 100 题</text>
+<text x="42.0" y="132.0" font-size="15" font-weight="400" fill="#60717C" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">7 类 target-exact 自然语言场景 · simulator_version 2</text>
+<circle cx="884.0" cy="51.0" r="8.0" fill="#D97724" stroke="#D97724" stroke-width="2.0"/>
+<text x="902.0" y="57.0" font-size="14" font-weight="600" fill="#17202A" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">Official 离线</text>
+<circle cx="1040.0" cy="51.0" r="8.0" fill="#2563A6" stroke="#2563A6" stroke-width="2.0"/>
+<text x="1058.0" y="57.0" font-size="14" font-weight="600" fill="#17202A" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">DeepSeek</text>
+<rect x="42.0" y="154.0" width="1116.0" height="430.0" rx="16.0" fill="#FFFFFF" stroke="#D9E1E6"/>
+<text x="66.0" y="190.0" font-size="21" font-weight="700" fill="#17202A" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">总体质量</text>
+<text x="66.0" y="215.0" font-size="13" font-weight="400" fill="#60717C" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">同一 evaluator 内的成对变化；分数越高越好，MTTC 越低越好</text>
+<line x1="255.0" y1="266.0" x2="1010.0" y2="266.0" stroke="#8A989F" stroke-width="1.2"/>
+<line x1="255.0" y1="261.0" x2="255.0" y2="271.0" stroke="#8A989F" stroke-width="1.0"/>
+<text x="255.0" y="289.0" font-size="11" font-weight="400" fill="#60717C" text-anchor="middle" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">0</text>
+<line x1="443.8" y1="261.0" x2="443.8" y2="271.0" stroke="#8A989F" stroke-width="1.0"/>
+<text x="443.8" y="289.0" font-size="11" font-weight="400" fill="#60717C" text-anchor="middle" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">0.25</text>
+<line x1="632.5" y1="261.0" x2="632.5" y2="271.0" stroke="#8A989F" stroke-width="1.0"/>
+<text x="632.5" y="289.0" font-size="11" font-weight="400" fill="#60717C" text-anchor="middle" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">0.5</text>
+<line x1="821.2" y1="261.0" x2="821.2" y2="271.0" stroke="#8A989F" stroke-width="1.0"/>
+<text x="821.2" y="289.0" font-size="11" font-weight="400" fill="#60717C" text-anchor="middle" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">0.75</text>
+<line x1="1010.0" y1="261.0" x2="1010.0" y2="271.0" stroke="#8A989F" stroke-width="1.0"/>
+<text x="1010.0" y="289.0" font-size="11" font-weight="400" fill="#60717C" text-anchor="middle" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">1</text>
+<text x="231.0" y="315.0" font-size="15" font-weight="650" fill="#17202A" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">Hit@10</text>
+<line x1="692.9" y1="309.0" x2="836.4" y2="309.0" stroke="#AAB6BD" stroke-width="4.0"/>
+<circle cx="692.9" cy="309.0" r="8.0" fill="#D97724" stroke="#FFFFFF" stroke-width="2.0"/>
+<circle cx="836.4" cy="309.0" r="8.0" fill="#2563A6" stroke="#FFFFFF" stroke-width="2.0"/>
+<text x="692.9" y="294.0" font-size="12" font-weight="650" fill="#17202A" text-anchor="middle" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">0.580</text>
+<text x="836.4" y="336.0" font-size="12" font-weight="650" fill="#17202A" text-anchor="middle" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">0.770</text>
+<text x="1028.0" y="315.0" font-size="13" font-weight="700" fill="#2563A6" text-anchor="start" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">+0.190</text>
+<text x="231.0" y="367.0" font-size="15" font-weight="650" fill="#17202A" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">Exact Top-1</text>
+<line x1="458.9" y1="361.0" x2="640.0" y2="361.0" stroke="#AAB6BD" stroke-width="4.0"/>
+<circle cx="458.9" cy="361.0" r="8.0" fill="#D97724" stroke="#FFFFFF" stroke-width="2.0"/>
+<circle cx="640.0" cy="361.0" r="8.0" fill="#2563A6" stroke="#FFFFFF" stroke-width="2.0"/>
+<text x="458.9" y="346.0" font-size="12" font-weight="650" fill="#17202A" text-anchor="middle" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">0.270</text>
+<text x="640.0" y="388.0" font-size="12" font-weight="650" fill="#17202A" text-anchor="middle" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">0.510</text>
+<text x="1028.0" y="367.0" font-size="13" font-weight="700" fill="#2563A6" text-anchor="start" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">+0.240</text>
+<text x="231.0" y="419.0" font-size="15" font-weight="650" fill="#17202A" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">MRR</text>
+<line x1="531.3" y1="413.0" x2="711.9" y2="413.0" stroke="#AAB6BD" stroke-width="4.0"/>
+<circle cx="531.3" cy="413.0" r="8.0" fill="#D97724" stroke="#FFFFFF" stroke-width="2.0"/>
+<circle cx="711.9" cy="413.0" r="8.0" fill="#2563A6" stroke="#FFFFFF" stroke-width="2.0"/>
+<text x="531.3" y="398.0" font-size="12" font-weight="650" fill="#17202A" text-anchor="middle" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">0.366</text>
+<text x="711.9" y="440.0" font-size="12" font-weight="650" fill="#17202A" text-anchor="middle" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">0.605</text>
+<text x="1028.0" y="419.0" font-size="13" font-weight="700" fill="#2563A6" text-anchor="start" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">+0.239</text>
+<line x1="70.0" y1="444.0" x2="1130.0" y2="444.0" stroke="#D9E1E6" stroke-width="1.0" stroke-dasharray="4 5"/>
+<text x="70.0" y="467.0" font-size="13" font-weight="700" fill="#60717C" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">MTTC · turns</text>
+<text x="231.0" y="507.0" font-size="15" font-weight="650" fill="#17202A" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">首命中轮数</text>
+<line x1="510.3" y1="501.0" x2="740.9" y2="501.0" stroke="#AAB6BD" stroke-width="4.0"/>
+<circle cx="740.9" cy="501.0" r="8.0" fill="#D97724" stroke="#FFFFFF" stroke-width="2.0"/>
+<circle cx="510.3" cy="501.0" r="8.0" fill="#2563A6" stroke="#FFFFFF" stroke-width="2.0"/>
+<text x="740.9" y="486.0" font-size="12" font-weight="650" fill="#17202A" text-anchor="middle" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">7.080</text>
+<text x="510.3" y="528.0" font-size="12" font-weight="650" fill="#17202A" text-anchor="middle" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">3.720</text>
+<text x="1028.0" y="507.0" font-size="13" font-weight="700" fill="#2563A6" text-anchor="start" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">-3.360</text>
+<line x1="255.0" y1="531.0" x2="1010.0" y2="531.0" stroke="#8A989F" stroke-width="1.2"/>
+<line x1="255.0" y1="526.0" x2="255.0" y2="536.0" stroke="#8A989F" stroke-width="1.0"/>
+<text x="255.0" y="554.0" font-size="11" font-weight="400" fill="#60717C" text-anchor="middle" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">0</text>
+<line x1="460.9" y1="526.0" x2="460.9" y2="536.0" stroke="#8A989F" stroke-width="1.0"/>
+<text x="460.9" y="554.0" font-size="11" font-weight="400" fill="#60717C" text-anchor="middle" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">3</text>
+<line x1="666.8" y1="526.0" x2="666.8" y2="536.0" stroke="#8A989F" stroke-width="1.0"/>
+<text x="666.8" y="554.0" font-size="11" font-weight="400" fill="#60717C" text-anchor="middle" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">6</text>
+<line x1="872.7" y1="526.0" x2="872.7" y2="536.0" stroke="#8A989F" stroke-width="1.0"/>
+<text x="872.7" y="554.0" font-size="11" font-weight="400" fill="#60717C" text-anchor="middle" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">9</text>
+<line x1="1010.0" y1="526.0" x2="1010.0" y2="536.0" stroke="#8A989F" stroke-width="1.0"/>
+<text x="1010.0" y="554.0" font-size="11" font-weight="400" fill="#60717C" text-anchor="middle" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">11</text>
+<rect x="42.0" y="602.0" width="1116.0" height="616.0" rx="16.0" fill="#FFFFFF" stroke="#D9E1E6"/>
+<text x="66.0" y="638.0" font-size="21" font-weight="700" fill="#17202A" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">场景小多图</text>
+<text x="66.0" y="663.0" font-size="13" font-weight="400" fill="#60717C" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">每个单元格是 Official → DeepSeek；不同指标使用独立坐标</text>
+<text x="357.5" y="693.0" font-size="13" font-weight="700" fill="#17202A" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">Hit@10</text>
+<line x1="230.0" y1="703.0" x2="485.0" y2="703.0" stroke="#D9E1E6" stroke-width="1.0"/>
+<text x="672.5" y="693.0" font-size="13" font-weight="700" fill="#17202A" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">Exact Top-1</text>
+<line x1="545.0" y1="703.0" x2="800.0" y2="703.0" stroke="#D9E1E6" stroke-width="1.0"/>
+<text x="987.5" y="693.0" font-size="13" font-weight="700" fill="#17202A" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">MTTC · 越低越好</text>
+<line x1="860.0" y1="703.0" x2="1115.0" y2="703.0" stroke="#D9E1E6" stroke-width="1.0"/>
+<text x="62.0" y="736.0" font-size="13" font-weight="650" fill="#17202A" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">Budget Rating</text>
+<text x="62.0" y="756.0" font-size="11" font-weight="400" fill="#60717C" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">n=14</text>
+<line x1="62.0" y1="772.0" x2="1130.0" y2="772.0" stroke="#EEF2F4" stroke-width="1.0"/>
+<line x1="230.0" y1="738.0" x2="485.0" y2="738.0" stroke="#D9E1E6" stroke-width="1.0"/>
+<line x1="339.3" y1="738.0" x2="412.1" y2="738.0" stroke="#AAB6BD" stroke-width="3.0"/>
+<circle cx="339.3" cy="735.0" r="6.0" fill="#D97724" stroke="#FFFFFF" stroke-width="2.0"/>
+<circle cx="412.1" cy="741.0" r="6.0" fill="#2563A6" stroke="#FFFFFF" stroke-width="2.0"/>
+<text x="230.0" y="761.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="start" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">O 0.429</text>
+<text x="485.0" y="761.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="end" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">D 0.714</text>
+<line x1="545.0" y1="738.0" x2="800.0" y2="738.0" stroke="#D9E1E6" stroke-width="1.0"/>
+<line x1="563.2" y1="738.0" x2="617.9" y2="738.0" stroke="#AAB6BD" stroke-width="3.0"/>
+<circle cx="563.2" cy="735.0" r="6.0" fill="#D97724" stroke="#FFFFFF" stroke-width="2.0"/>
+<circle cx="617.9" cy="741.0" r="6.0" fill="#2563A6" stroke="#FFFFFF" stroke-width="2.0"/>
+<text x="545.0" y="761.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="start" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">O 0.071</text>
+<text x="800.0" y="761.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="end" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">D 0.286</text>
+<line x1="860.0" y1="738.0" x2="1115.0" y2="738.0" stroke="#D9E1E6" stroke-width="1.0"/>
+<line x1="959.5" y1="738.0" x2="1057.0" y2="738.0" stroke="#AAB6BD" stroke-width="3.0"/>
+<circle cx="1057.0" cy="735.0" r="6.0" fill="#D97724" stroke="#FFFFFF" stroke-width="2.0"/>
+<circle cx="959.5" cy="741.0" r="6.0" fill="#2563A6" stroke="#FFFFFF" stroke-width="2.0"/>
+<text x="860.0" y="761.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="start" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">O 8.50</text>
+<text x="1115.0" y="761.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="end" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">D 4.29</text>
+<text x="62.0" y="808.0" font-size="13" font-weight="650" fill="#17202A" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">Clarification Required</text>
+<text x="62.0" y="828.0" font-size="11" font-weight="400" fill="#60717C" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">n=14</text>
+<line x1="62.0" y1="844.0" x2="1130.0" y2="844.0" stroke="#EEF2F4" stroke-width="1.0"/>
+<line x1="230.0" y1="810.0" x2="485.0" y2="810.0" stroke="#D9E1E6" stroke-width="1.0"/>
+<line x1="412.1" y1="810.0" x2="412.1" y2="810.0" stroke="#AAB6BD" stroke-width="3.0"/>
+<circle cx="412.1" cy="807.0" r="6.0" fill="#D97724" stroke="#FFFFFF" stroke-width="2.0"/>
+<circle cx="412.1" cy="813.0" r="6.0" fill="#2563A6" stroke="#FFFFFF" stroke-width="2.0"/>
+<text x="230.0" y="833.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="start" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">O 0.714</text>
+<text x="485.0" y="833.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="end" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">D 0.714</text>
+<line x1="545.0" y1="810.0" x2="800.0" y2="810.0" stroke="#D9E1E6" stroke-width="1.0"/>
+<line x1="581.4" y1="810.0" x2="654.3" y2="810.0" stroke="#AAB6BD" stroke-width="3.0"/>
+<circle cx="581.4" cy="807.0" r="6.0" fill="#D97724" stroke="#FFFFFF" stroke-width="2.0"/>
+<circle cx="654.3" cy="813.0" r="6.0" fill="#2563A6" stroke="#FFFFFF" stroke-width="2.0"/>
+<text x="545.0" y="833.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="start" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">O 0.143</text>
+<text x="800.0" y="833.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="end" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">D 0.429</text>
+<line x1="860.0" y1="810.0" x2="1115.0" y2="810.0" stroke="#D9E1E6" stroke-width="1.0"/>
+<line x1="962.7" y1="810.0" x2="1017.4" y2="810.0" stroke="#AAB6BD" stroke-width="3.0"/>
+<circle cx="1017.4" cy="807.0" r="6.0" fill="#D97724" stroke="#FFFFFF" stroke-width="2.0"/>
+<circle cx="962.7" cy="813.0" r="6.0" fill="#2563A6" stroke="#FFFFFF" stroke-width="2.0"/>
+<text x="860.0" y="833.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="start" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">O 6.79</text>
+<text x="1115.0" y="833.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="end" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">D 4.43</text>
+<text x="62.0" y="880.0" font-size="13" font-weight="650" fill="#17202A" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">Direct Search</text>
+<text x="62.0" y="900.0" font-size="11" font-weight="400" fill="#60717C" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">n=15</text>
+<line x1="62.0" y1="916.0" x2="1130.0" y2="916.0" stroke="#EEF2F4" stroke-width="1.0"/>
+<line x1="230.0" y1="882.0" x2="485.0" y2="882.0" stroke="#D9E1E6" stroke-width="1.0"/>
+<line x1="434.0" y1="882.0" x2="485.0" y2="882.0" stroke="#AAB6BD" stroke-width="3.0"/>
+<circle cx="434.0" cy="879.0" r="6.0" fill="#D97724" stroke="#FFFFFF" stroke-width="2.0"/>
+<circle cx="485.0" cy="885.0" r="6.0" fill="#2563A6" stroke="#FFFFFF" stroke-width="2.0"/>
+<text x="230.0" y="905.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="start" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">O 0.800</text>
+<text x="485.0" y="905.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="end" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">D 1.000</text>
+<line x1="545.0" y1="882.0" x2="800.0" y2="882.0" stroke="#D9E1E6" stroke-width="1.0"/>
+<line x1="698.0" y1="882.0" x2="783.0" y2="882.0" stroke="#AAB6BD" stroke-width="3.0"/>
+<circle cx="698.0" cy="879.0" r="6.0" fill="#D97724" stroke="#FFFFFF" stroke-width="2.0"/>
+<circle cx="783.0" cy="885.0" r="6.0" fill="#2563A6" stroke="#FFFFFF" stroke-width="2.0"/>
+<text x="545.0" y="905.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="start" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">O 0.600</text>
+<text x="800.0" y="905.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="end" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">D 0.933</text>
+<line x1="860.0" y1="882.0" x2="1115.0" y2="882.0" stroke="#D9E1E6" stroke-width="1.0"/>
+<line x1="883.2" y1="882.0" x2="946.5" y2="882.0" stroke="#AAB6BD" stroke-width="3.0"/>
+<circle cx="946.5" cy="879.0" r="6.0" fill="#D97724" stroke="#FFFFFF" stroke-width="2.0"/>
+<circle cx="883.2" cy="885.0" r="6.0" fill="#2563A6" stroke="#FFFFFF" stroke-width="2.0"/>
+<text x="860.0" y="905.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="start" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">O 3.73</text>
+<text x="1115.0" y="905.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="end" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">D 1.00</text>
+<text x="62.0" y="952.0" font-size="13" font-weight="650" fill="#17202A" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">Intent Override</text>
+<text x="62.0" y="972.0" font-size="11" font-weight="400" fill="#60717C" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">n=14</text>
+<line x1="62.0" y1="988.0" x2="1130.0" y2="988.0" stroke="#EEF2F4" stroke-width="1.0"/>
+<line x1="230.0" y1="954.0" x2="485.0" y2="954.0" stroke="#D9E1E6" stroke-width="1.0"/>
+<line x1="339.3" y1="954.0" x2="448.6" y2="954.0" stroke="#AAB6BD" stroke-width="3.0"/>
+<circle cx="339.3" cy="951.0" r="6.0" fill="#D97724" stroke="#FFFFFF" stroke-width="2.0"/>
+<circle cx="448.6" cy="957.0" r="6.0" fill="#2563A6" stroke="#FFFFFF" stroke-width="2.0"/>
+<text x="230.0" y="977.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="start" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">O 0.429</text>
+<text x="485.0" y="977.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="end" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">D 0.857</text>
+<line x1="545.0" y1="954.0" x2="800.0" y2="954.0" stroke="#D9E1E6" stroke-width="1.0"/>
+<line x1="599.6" y1="954.0" x2="727.1" y2="954.0" stroke="#AAB6BD" stroke-width="3.0"/>
+<circle cx="599.6" cy="951.0" r="6.0" fill="#D97724" stroke="#FFFFFF" stroke-width="2.0"/>
+<circle cx="727.1" cy="957.0" r="6.0" fill="#2563A6" stroke="#FFFFFF" stroke-width="2.0"/>
+<text x="545.0" y="977.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="start" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">O 0.214</text>
+<text x="800.0" y="977.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="end" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">D 0.714</text>
+<line x1="860.0" y1="954.0" x2="1115.0" y2="954.0" stroke="#D9E1E6" stroke-width="1.0"/>
+<line x1="936.3" y1="954.0" x2="1033.9" y2="954.0" stroke="#AAB6BD" stroke-width="3.0"/>
+<circle cx="1033.9" cy="951.0" r="6.0" fill="#D97724" stroke="#FFFFFF" stroke-width="2.0"/>
+<circle cx="936.3" cy="957.0" r="6.0" fill="#2563A6" stroke="#FFFFFF" stroke-width="2.0"/>
+<text x="860.0" y="977.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="start" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">O 7.50</text>
+<text x="1115.0" y="977.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="end" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">D 3.29</text>
+<text x="62.0" y="1024.0" font-size="13" font-weight="650" fill="#17202A" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">Multi Constraint</text>
+<text x="62.0" y="1044.0" font-size="11" font-weight="400" fill="#60717C" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">n=15</text>
+<line x1="62.0" y1="1060.0" x2="1130.0" y2="1060.0" stroke="#EEF2F4" stroke-width="1.0"/>
+<line x1="230.0" y1="1026.0" x2="485.0" y2="1026.0" stroke="#D9E1E6" stroke-width="1.0"/>
+<line x1="434.0" y1="1026.0" x2="451.0" y2="1026.0" stroke="#AAB6BD" stroke-width="3.0"/>
+<circle cx="451.0" cy="1023.0" r="6.0" fill="#D97724" stroke="#FFFFFF" stroke-width="2.0"/>
+<circle cx="434.0" cy="1029.0" r="6.0" fill="#2563A6" stroke="#FFFFFF" stroke-width="2.0"/>
+<text x="230.0" y="1049.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="start" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">O 0.867</text>
+<text x="485.0" y="1049.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="end" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">D 0.800</text>
+<line x1="545.0" y1="1026.0" x2="800.0" y2="1026.0" stroke="#D9E1E6" stroke-width="1.0"/>
+<line x1="681.0" y1="1026.0" x2="698.0" y2="1026.0" stroke="#AAB6BD" stroke-width="3.0"/>
+<circle cx="698.0" cy="1023.0" r="6.0" fill="#D97724" stroke="#FFFFFF" stroke-width="2.0"/>
+<circle cx="681.0" cy="1029.0" r="6.0" fill="#2563A6" stroke="#FFFFFF" stroke-width="2.0"/>
+<text x="545.0" y="1049.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="start" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">O 0.600</text>
+<text x="800.0" y="1049.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="end" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">D 0.533</text>
+<line x1="860.0" y1="1026.0" x2="1115.0" y2="1026.0" stroke="#D9E1E6" stroke-width="1.0"/>
+<line x1="941.8" y1="1026.0" x2="994.5" y2="1026.0" stroke="#AAB6BD" stroke-width="3.0"/>
+<circle cx="994.5" cy="1023.0" r="6.0" fill="#D97724" stroke="#FFFFFF" stroke-width="2.0"/>
+<circle cx="941.8" cy="1029.0" r="6.0" fill="#2563A6" stroke="#FFFFFF" stroke-width="2.0"/>
+<text x="860.0" y="1049.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="start" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">O 5.80</text>
+<text x="1115.0" y="1049.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="end" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">D 3.53</text>
+<text x="62.0" y="1096.0" font-size="13" font-weight="650" fill="#17202A" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">Negative Constraint</text>
+<text x="62.0" y="1116.0" font-size="11" font-weight="400" fill="#60717C" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">n=14</text>
+<line x1="62.0" y1="1132.0" x2="1130.0" y2="1132.0" stroke="#EEF2F4" stroke-width="1.0"/>
+<line x1="230.0" y1="1098.0" x2="485.0" y2="1098.0" stroke="#D9E1E6" stroke-width="1.0"/>
+<line x1="393.9" y1="1098.0" x2="430.4" y2="1098.0" stroke="#AAB6BD" stroke-width="3.0"/>
+<circle cx="393.9" cy="1095.0" r="6.0" fill="#D97724" stroke="#FFFFFF" stroke-width="2.0"/>
+<circle cx="430.4" cy="1101.0" r="6.0" fill="#2563A6" stroke="#FFFFFF" stroke-width="2.0"/>
+<text x="230.0" y="1121.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="start" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">O 0.643</text>
+<text x="485.0" y="1121.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="end" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">D 0.786</text>
+<line x1="545.0" y1="1098.0" x2="800.0" y2="1098.0" stroke="#D9E1E6" stroke-width="1.0"/>
+<line x1="599.6" y1="1098.0" x2="636.1" y2="1098.0" stroke="#AAB6BD" stroke-width="3.0"/>
+<circle cx="599.6" cy="1095.0" r="6.0" fill="#D97724" stroke="#FFFFFF" stroke-width="2.0"/>
+<circle cx="636.1" cy="1101.0" r="6.0" fill="#2563A6" stroke="#FFFFFF" stroke-width="2.0"/>
+<text x="545.0" y="1121.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="start" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">O 0.214</text>
+<text x="800.0" y="1121.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="end" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">D 0.357</text>
+<line x1="860.0" y1="1098.0" x2="1115.0" y2="1098.0" stroke="#D9E1E6" stroke-width="1.0"/>
+<line x1="937.9" y1="1098.0" x2="1030.6" y2="1098.0" stroke="#AAB6BD" stroke-width="3.0"/>
+<circle cx="1030.6" cy="1095.0" r="6.0" fill="#D97724" stroke="#FFFFFF" stroke-width="2.0"/>
+<circle cx="937.9" cy="1101.0" r="6.0" fill="#2563A6" stroke="#FFFFFF" stroke-width="2.0"/>
+<text x="860.0" y="1121.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="start" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">O 7.36</text>
+<text x="1115.0" y="1121.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="end" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">D 3.36</text>
+<text x="62.0" y="1168.0" font-size="13" font-weight="650" fill="#17202A" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">Profile Hidden</text>
+<text x="62.0" y="1188.0" font-size="11" font-weight="400" fill="#60717C" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">n=14</text>
+<line x1="62.0" y1="1204.0" x2="1130.0" y2="1204.0" stroke="#EEF2F4" stroke-width="1.0"/>
+<line x1="230.0" y1="1170.0" x2="485.0" y2="1170.0" stroke="#D9E1E6" stroke-width="1.0"/>
+<line x1="266.4" y1="1170.0" x2="357.5" y2="1170.0" stroke="#AAB6BD" stroke-width="3.0"/>
+<circle cx="266.4" cy="1167.0" r="6.0" fill="#D97724" stroke="#FFFFFF" stroke-width="2.0"/>
+<circle cx="357.5" cy="1173.0" r="6.0" fill="#2563A6" stroke="#FFFFFF" stroke-width="2.0"/>
+<text x="230.0" y="1193.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="start" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">O 0.143</text>
+<text x="485.0" y="1193.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="end" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">D 0.500</text>
+<line x1="545.0" y1="1170.0" x2="800.0" y2="1170.0" stroke="#D9E1E6" stroke-width="1.0"/>
+<line x1="545.0" y1="1170.0" x2="617.9" y2="1170.0" stroke="#AAB6BD" stroke-width="3.0"/>
+<circle cx="545.0" cy="1167.0" r="6.0" fill="#D97724" stroke="#FFFFFF" stroke-width="2.0"/>
+<circle cx="617.9" cy="1173.0" r="6.0" fill="#2563A6" stroke="#FFFFFF" stroke-width="2.0"/>
+<text x="545.0" y="1193.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="start" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">O 0.000</text>
+<text x="800.0" y="1193.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="end" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">D 0.286</text>
+<line x1="860.0" y1="1170.0" x2="1115.0" y2="1170.0" stroke="#D9E1E6" stroke-width="1.0"/>
+<line x1="1007.4" y1="1170.0" x2="1096.7" y2="1170.0" stroke="#AAB6BD" stroke-width="3.0"/>
+<circle cx="1096.7" cy="1167.0" r="6.0" fill="#D97724" stroke="#FFFFFF" stroke-width="2.0"/>
+<circle cx="1007.4" cy="1173.0" r="6.0" fill="#2563A6" stroke="#FFFFFF" stroke-width="2.0"/>
+<text x="860.0" y="1193.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="start" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">O 10.21</text>
+<text x="1115.0" y="1193.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="end" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">D 6.36</text>
+<rect x="42.0" y="1236.0" width="1116.0" height="360.0" rx="16.0" fill="#FFFFFF" stroke="#D9E1E6"/>
+<text x="66.0" y="1272.0" font-size="21" font-weight="700" fill="#17202A" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">资源消耗</text>
+<text x="66.0" y="1297.0" font-size="13" font-weight="400" fill="#60717C" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">秒、Token、美元分轴展示；成本为峰值 cache 假设区间</text>
+<text x="70.0" y="1332.0" font-size="15" font-weight="700" fill="#17202A" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">延迟</text>
+<text x="160.0" y="1373.0" font-size="12" font-weight="600" fill="#17202A" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">每题</text>
+<line x1="190.0" y1="1368.0" x2="515.0" y2="1368.0" stroke="#D9E1E6" stroke-width="1.0"/>
+<line x1="381.3" y1="1368.0" x2="480.2" y2="1368.0" stroke="#AAB6BD" stroke-width="3.0"/>
+<circle cx="381.3" cy="1368.0" r="7.0" fill="#D97724" stroke="#FFFFFF" stroke-width="2.0"/>
+<circle cx="480.2" cy="1368.0" r="7.0" fill="#2563A6" stroke="#FFFFFF" stroke-width="2.0"/>
+<text x="381.3" y="1354.0" font-size="10" font-weight="400" fill="#17202A" text-anchor="middle" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">4.47</text>
+<text x="480.2" y="1392.0" font-size="10" font-weight="400" fill="#17202A" text-anchor="middle" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">6.78</text>
+<text x="160.0" y="1421.0" font-size="12" font-weight="600" fill="#17202A" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">每轮</text>
+<line x1="190.0" y1="1416.0" x2="515.0" y2="1416.0" stroke="#D9E1E6" stroke-width="1.0"/>
+<line x1="325.4" y1="1416.0" x2="480.2" y2="1416.0" stroke="#AAB6BD" stroke-width="3.0"/>
+<circle cx="325.4" cy="1416.0" r="7.0" fill="#D97724" stroke="#FFFFFF" stroke-width="2.0"/>
+<circle cx="480.2" cy="1416.0" r="7.0" fill="#2563A6" stroke="#FFFFFF" stroke-width="2.0"/>
+<text x="325.4" y="1402.0" font-size="10" font-weight="400" fill="#17202A" text-anchor="middle" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">0.89</text>
+<text x="480.2" y="1440.0" font-size="10" font-weight="400" fill="#17202A" text-anchor="middle" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">1.90</text>
+<text x="70.0" y="1474.0" font-size="11" font-weight="400" fill="#60717C" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">总 wall time：447.01s → 677.93s</text>
+<text x="595.0" y="1332.0" font-size="15" font-weight="700" fill="#17202A" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">Reported tokens</text>
+<text x="675.0" y="1371.0" font-size="11" font-weight="400" fill="#17202A" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">Official</text>
+<rect x="690.0" y="1355.0" width="410.0" height="18.0" rx="4.0" fill="#EEF2F4" stroke="none"/>
+<text x="698.0" y="1369.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="start" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">0</text>
+<text x="675.0" y="1415.0" font-size="11" font-weight="400" fill="#17202A" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">DeepSeek</text>
+<rect x="690.0" y="1399.0" width="410.0" height="18.0" rx="4.0" fill="#EEF2F4" stroke="none"/>
+<rect x="690.0" y="1399.0" width="393.3" height="18.0" rx="2.0" fill="#2563A6" stroke="none"/>
+<rect x="1083.3" y="1399.0" width="7.7" height="18.0" rx="2.0" fill="#79A9D6" stroke="none"/>
+<rect x="1091.0" y="1399.0" width="0.9" height="18.0" rx="2.0" fill="#A8BBCB" stroke="none"/>
+<text x="1100.0" y="1435.0" font-size="10" font-weight="400" fill="#17202A" text-anchor="end" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">924,200</text>
+<rect x="690.0" y="1454.0" width="12.0" height="12.0" rx="2.0" fill="#2563A6" stroke="none"/>
+<text x="710.0" y="1465.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">prompt</text>
+<rect x="775.0" y="1454.0" width="12.0" height="12.0" rx="2.0" fill="#79A9D6" stroke="none"/>
+<text x="795.0" y="1465.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">completion</text>
+<text x="595.0" y="1492.0" font-size="10" font-weight="400" fill="#60717C" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">总量含 2,153 本地 fallback token；成本仅按 DeepSeek 归属 token</text>
+<text x="70.0" y="1521.0" font-size="15" font-weight="700" fill="#17202A" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">峰值成本区间</text>
+<text x="160.0" y="1543.0" font-size="12" font-weight="600" fill="#17202A" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">DeepSeek</text>
+<line x1="240.0" y1="1538.0" x2="1080.0" y2="1538.0" stroke="#D9E1E6" stroke-width="1.0"/>
+<line x1="308.4" y1="1538.0" x2="1040.0" y2="1538.0" stroke="#2563A6" stroke-width="6.0"/>
+<circle cx="308.4" cy="1538.0" r="7.0" fill="#2563A6" stroke="#FFFFFF" stroke-width="2.0"/>
+<circle cx="1040.0" cy="1538.0" r="7.0" fill="#2563A6" stroke="#FFFFFF" stroke-width="2.0"/>
+<text x="308.4" y="1523.0" font-size="10" font-weight="400" fill="#17202A" text-anchor="middle" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">$0.036 · 全 hit</text>
+<text x="1040.0" y="1523.0" font-size="10" font-weight="400" fill="#17202A" text-anchor="middle" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">$0.421 · 全 miss</text>
+<text x="70.0" y="1577.0" font-size="11" font-weight="400" fill="#60717C" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">Official 离线：$0</text>
+<text x="42.0" y="1712.0" font-size="12" font-weight="400" fill="#60717C" text-anchor="start" font-family="-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Noto Sans CJK SC&quot;,sans-serif">4 次 DeepSeek validator 失败用量未计入；只在本图内比较两种配置。</text>
+<text x="1158.0" y="1712.0" font-size="12" font-weight="400" fill="#60717C" text-anchor="end" font-family="&quot;SF Mono&quot;,&quot;Roboto Mono&quot;,monospace">2026-08-31</text>
+</svg>

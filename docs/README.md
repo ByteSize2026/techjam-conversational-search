@@ -16,6 +16,14 @@
 - [配置可选模型后端](development/model-backends.md)：启用 DeepSeek、本地兼容端点或 Qwen。
 - [运行离线 benchmark](development/benchmarks.md)：执行 adaptive recall 诊断和 Qwen 实验。
 
+## 解释与报告：理解实验结果
+
+- [四组 evaluator 对比实验](reports/evaluator-comparison-2026-08-31.md)：比较官方/智能 evaluator 下的 Official 离线与 DeepSeek model-first 结果、延迟和成本。
+
+## 提交材料：准备公开说明
+
+- [Devpost 提交稿（中文）](submissions/devpost-zh.md)：精简项目说明、结果图、技术栈、复现和提交链接。
+
 ## 架构解释：理解系统
 
 - [系统架构](architecture.md)：唯一正式入口、组件职责、每轮数据流和变更影响面。

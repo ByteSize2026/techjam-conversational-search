@@ -17,7 +17,7 @@
 shasum -a 256 catalog.jsonl.gz
 ```
 
-将结果与仓库根目录 `SHA256SUMS` 的对应行比较，然后解压：
+将结果与同一 GitHub Release 附带的 `SHA256SUMS` 文件中 `catalog.jsonl.gz` 的对应行比较，然后解压：
 
 ```bash
 gzip -dc catalog.jsonl.gz > data/catalog.jsonl

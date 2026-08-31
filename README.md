@@ -19,7 +19,7 @@ API key 或网络连接。
 shasum -a 256 catalog.jsonl.gz
 ```
 
-结果应与 [`SHA256SUMS`](SHA256SUMS) 中的 `catalog.jsonl.gz` 一致。随后解压到 `data/`：
+结果应与同一 GitHub Release 附带的 `SHA256SUMS` 文件中 `catalog.jsonl.gz` 的记录一致；校验文件无需放入本仓库。随后解压到 `data/`：
 
 ```bash
 gzip -dc catalog.jsonl.gz > data/catalog.jsonl
@@ -133,6 +133,8 @@ class Agent:
 
 ## 文档导航
 
+- [Devpost 提交稿（中文）](docs/submissions/devpost-zh.md)：可直接整理到 Devpost 的项目说明、结果图和提交信息。
+- [Evaluator 对比报告](docs/reports/evaluator-comparison-2026-08-31.md)：四组 evaluator 的质量、延迟、token 和成本记录。
 - [文档总览](docs/README.md)：按教程、操作指南、架构解释和公开参考查找文档。
 - [系统架构](docs/architecture.md)：模块职责、每轮数据流和稳定边界。
 - [本地开发与评测](docs/development/local-evaluation.md)：catalog、测试、评测和常见问题。
